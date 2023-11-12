@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 tree-sitter-rules = { path = "../tree-sitter-firebase-rules" }
 tree-sitter = "0.20.10"
+nanoid = "0.4.0"
 
 [build-dependencies]
 cc = "*"

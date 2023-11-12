@@ -73,114 +73,126 @@ fn parse_literal(_node: &Node, context: &Context) -> Literal {
 }
 
 fn parse_expression(node: &Node, context: &Context) -> Expression {
-    match node.kind() {
-        "literal" => Expression::Literal(parse_literal(node, context)),
-        "identifier" => Expression::Value(get_text(node, context).into()),
-        "unary_expression" => Expression::UnaryOperation(
-            match node.child_by_field_name("operator").unwrap().kind() {
-                "!" => UnaryLiteral::Not,
-                "-" => UnaryLiteral::Minus,
-                "+" => UnaryLiteral::Plus,
-                "~" => UnaryLiteral::Tilde,
-                _ => panic!(),
-            },
-            Box::new(parse_expression(
-                &node.child_by_field_name("expression").unwrap(),
-                context,
-            )),
-        ),
-        "binary_expression" => Expression::BinaryOperation(
-            match node.child_by_field_name("operator").unwrap().kind() {
-                "&&" => BinaryLiteral::LogicalAnd,
-                "||" => BinaryLiteral::LogicalOr,
-                "&" => BinaryLiteral::BitwiseAnd,
-                "^" => BinaryLiteral::BitwiseOr,
-                "|" => BinaryLiteral::BitwiseXor,
-                "+" => BinaryLiteral::Add,
-                "-" => BinaryLiteral::Sub,
-                "*" => BinaryLiteral::Mul,
-                "/" => BinaryLiteral::Div,
-                "%" => BinaryLiteral::Mod,
-                "<" => BinaryLiteral::Gt,
-                "<=" => BinaryLiteral::Gte,
-                "==" => BinaryLiteral::Eq,
-                "!=" => BinaryLiteral::NotEq,
-                ">=" => BinaryLiteral::Lte,
-                ">" => BinaryLiteral::Lt,
-                "is" => BinaryLiteral::Is,
-                "in" => BinaryLiteral::In,
-                _ => panic!(),
-            },
-            Box::new(parse_expression(
-                &node.child_by_field_name("left").unwrap(),
-                context,
-            )),
-            Box::new(parse_expression(
-                &node.child_by_field_name("right").unwrap(),
-                context,
-            )),
-        ),
-        "ternary_expression" => Expression::TernaryOperation(
-            Box::new(parse_expression(
-                &node.child_by_field_name("condition").unwrap(),
-                context,
-            )),
-            Box::new(parse_expression(
-                &node.child_by_field_name("true").unwrap(),
-                context,
-            )),
-            Box::new(parse_expression(
-                &node.child_by_field_name("false").unwrap(),
-                context,
-            )),
-        ),
-        "paran" => parse_expression(&node.child_by_field_name("expression").unwrap(), context),
-        "member_expression" => Expression::MemberExpression(
-            Box::new(parse_expression(
-                &node.child_by_field_name("object").unwrap(),
-                context,
-            )),
-            Box::new(parse_expression(
-                &node.child_by_field_name("member").unwrap(),
-                context,
-            )),
-        ),
-        "subscript_expression" => Expression::SubscriptExpression(
-            Box::new(parse_expression(
-                &node.child_by_field_name("object").unwrap(),
-                context,
-            )),
-            Box::new(parse_expression(
-                &node.child_by_field_name("subscript").unwrap(),
-                context,
-            )),
-        ),
-        "function_call_expression" => Expression::FunctionCallExpression(
-            get_text(&node.child_by_field_name("name").unwrap(), context).into(),
-            node.child_by_field_name("params")
-                .unwrap()
-                .children_by_field_name("param", &mut node.walk())
-                .map(|node| parse_expression(&node, context))
-                .collect(),
-        ),
-        _ => panic!(),
+    Expression {
+        id: NodeID::new(),
+        span: Span(node.range()),
+        kind: match node.kind() {
+            "literal" => ExpressionKind::Literal(parse_literal(node, context)),
+            "identifier" => ExpressionKind::Value(get_text(node, context).into()),
+            "unary_expression" => ExpressionKind::UnaryOperation(
+                match node.child_by_field_name("operator").unwrap().kind() {
+                    "!" => UnaryLiteral::Not,
+                    "-" => UnaryLiteral::Minus,
+                    "+" => UnaryLiteral::Plus,
+                    "~" => UnaryLiteral::Tilde,
+                    _ => panic!(),
+                },
+                Box::new(parse_expression(
+                    &node.child_by_field_name("expression").unwrap(),
+                    context,
+                )),
+            ),
+            "binary_expression" => ExpressionKind::BinaryOperation(
+                match node.child_by_field_name("operator").unwrap().kind() {
+                    "&&" => BinaryLiteral::LogicalAnd,
+                    "||" => BinaryLiteral::LogicalOr,
+                    "&" => BinaryLiteral::BitwiseAnd,
+                    "^" => BinaryLiteral::BitwiseOr,
+                    "|" => BinaryLiteral::BitwiseXor,
+                    "+" => BinaryLiteral::Add,
+                    "-" => BinaryLiteral::Sub,
+                    "*" => BinaryLiteral::Mul,
+                    "/" => BinaryLiteral::Div,
+                    "%" => BinaryLiteral::Mod,
+                    "<" => BinaryLiteral::Gt,
+                    "<=" => BinaryLiteral::Gte,
+                    "==" => BinaryLiteral::Eq,
+                    "!=" => BinaryLiteral::NotEq,
+                    ">=" => BinaryLiteral::Lte,
+                    ">" => BinaryLiteral::Lt,
+                    "is" => BinaryLiteral::Is,
+                    "in" => BinaryLiteral::In,
+                    _ => panic!(),
+                },
+                Box::new(parse_expression(
+                    &node.child_by_field_name("left").unwrap(),
+                    context,
+                )),
+                Box::new(parse_expression(
+                    &node.child_by_field_name("right").unwrap(),
+                    context,
+                )),
+            ),
+            "ternary_expression" => ExpressionKind::TernaryOperation(
+                Box::new(parse_expression(
+                    &node.child_by_field_name("condition").unwrap(),
+                    context,
+                )),
+                Box::new(parse_expression(
+                    &node.child_by_field_name("true").unwrap(),
+                    context,
+                )),
+                Box::new(parse_expression(
+                    &node.child_by_field_name("false").unwrap(),
+                    context,
+                )),
+            ),
+            "paran" => parse_expression(&node.child_by_field_name("expression").unwrap(), context).kind,
+            "member_expression" => ExpressionKind::MemberExpression(
+                Box::new(parse_expression(
+                    &node.child_by_field_name("object").unwrap(),
+                    context,
+                )),
+                Box::new(parse_expression(
+                    &node.child_by_field_name("member").unwrap(),
+                    context,
+                )),
+            ),
+            "subscript_expression" => ExpressionKind::SubscriptExpression(
+                Box::new(parse_expression(
+                    &node.child_by_field_name("object").unwrap(),
+                    context,
+                )),
+                Box::new(parse_expression(
+                    &node.child_by_field_name("subscript").unwrap(),
+                    context,
+                )),
+            ),
+            "function_call_expression" => ExpressionKind::FunctionCallExpression(
+                get_text(&node.child_by_field_name("name").unwrap(), context).into(),
+                node.child_by_field_name("params")
+                    .unwrap()
+                    .children_by_field_name("param", &mut node.walk())
+                    .map(|node| parse_expression(&node, context))
+                    .collect(),
+            ),
+            _ => panic!(),
+        }
     }
 }
 
 fn parse_function(node: &Node, context: &Context) -> Function {
     Function {
+        id: NodeID::new(),
+        span: Span(node.range()),
         name: get_text(&node.child_by_field_name("name").unwrap(), context).into(),
         arguments: node
             .child_by_field_name("argument")
             .unwrap()
             .children_by_field_name("arg", &mut node.walk())
-            .map(|node| get_text(&node, context).into())
+            .map(|node| Argument {
+                id: NodeID::new(),
+                span: Span(node.range()),
+                name: get_text(&node, context).into()
+            })
             .collect(),
         let_bindings: node
             .child_by_field_name("body")
             .unwrap()
             .children_by_field_name("statement", &mut node.walk())
             .map(|node| Binding {
+                id: NodeID::new(),
+                span: Span(node.range()),
                 name: get_text(&node.child_by_field_name("name").unwrap(), context).into(),
                 expression: parse_expression(
                     &node.child_by_field_name("expression").unwrap(),
@@ -203,6 +215,8 @@ fn parse_function(node: &Node, context: &Context) -> Function {
 
 fn parse_rule(node: &Node, context: &Context) -> Rule {
     Rule {
+        id: NodeID::new(),
+        span: Span(node.range()),
         permissions: node
             .children_by_field_name("operation", &mut node.walk())
             .map(|node| match get_text(&node, context) {
@@ -222,19 +236,30 @@ fn parse_rule(node: &Node, context: &Context) -> Rule {
 
 fn parse_rule_groups(node: &Node, context: &Context) -> RuleGroup {
     RuleGroup {
+        id: NodeID::new(),
+        span: Span(node.range()),
         match_path: node
             .child_by_field_name("path")
             .unwrap()
             .children(&mut node.walk())
             .map(|node| match node.kind() {
-                "path_string" => MatchPathLiteral::Path(
+                "path_string" => MatchPathLiteral::PathIdentifier(
                     get_text(&node.child_by_field_name("path").unwrap(), context).into(),
                 ),
                 "path_capture_string" => MatchPathLiteral::PathCapture(
-                    get_text(&node.child_by_field_name("value").unwrap(), context).into(),
+                    PathCapture{
+        id: NodeID::new(),
+        span: Span(node.range()),
+        name: get_text(&node.child_by_field_name("value").unwrap(), context).into(),
+                    },
                 ),
                 "path_capture_group_string" => MatchPathLiteral::PathCaptureGroup(
-                    get_text(&node.child_by_field_name("value").unwrap(), context).into(),
+                    PathCaptureGroup{
+                        id: NodeID::new(),
+                        span: Span(node.range()),
+                        name: get_text(&node.child_by_field_name("value").unwrap(), context).into(),
+                                    },
+                    
                 ),
                 _ => panic!(),
             })
@@ -256,6 +281,8 @@ fn parse_rule_groups(node: &Node, context: &Context) -> RuleGroup {
 
 fn parse_code(node: &Node, context: &Context) -> RulesTree {
     RulesTree {
+        id: NodeID::new(),
+        span: Span(node.range()),
         version: node.child_by_field_name("version").map(|version| {
             parse_string(get_text(
                 &version.child_by_field_name("version").unwrap(),
@@ -265,6 +292,8 @@ fn parse_code(node: &Node, context: &Context) -> RulesTree {
         services: node
             .children_by_field_name("service", &mut node.walk())
             .map(|node| Service {
+                id: NodeID::new(),
+                span: Span(node.range()),
                 service_type: match get_text(&node.child_by_field_name("name").unwrap(), context) {
                     "cloud.firestore" => ServiceType::Firestore,
                     "firebase.storage" => ServiceType::Storage,
