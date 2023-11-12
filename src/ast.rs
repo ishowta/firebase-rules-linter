@@ -4,21 +4,33 @@ use tree_sitter::Range;
 #[derive(Debug)]
 pub struct Ast {
     pub tree: RulesTree,
-    //pub parse_errors: Vec<String>,
-    //pub semantic_tokens: Vec<ImCompleteSemanticToken>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct NodeID(pub String);
 
 impl NodeID {
-    pub fn new() -> NodeID{
+    pub fn new() -> NodeID {
         NodeID(nanoid!())
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Span(pub Range);
+
+impl std::fmt::Debug for Span {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Span")
+            .field(&format!(
+                "({},{}), ({},{})",
+                &self.0.start_point.row,
+                &self.0.start_point.column,
+                &self.0.end_point.row,
+                &self.0.end_point.column
+            ))
+            .finish()
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct RulesTree {
@@ -49,7 +61,7 @@ pub struct Function {
     pub span: Span,
     pub name: String,
     pub arguments: Vec<Argument>,
-    pub let_bindings: Vec<Binding>,
+    pub let_bindings: Vec<LetBinding>,
     pub return_expression: Expression,
 }
 
@@ -61,7 +73,7 @@ pub struct Argument {
 }
 
 #[derive(Clone, Debug)]
-pub struct Binding {
+pub struct LetBinding {
     pub id: NodeID,
     pub span: Span,
     pub name: String,
@@ -128,10 +140,11 @@ pub struct Expression {
 #[derive(Clone, Debug)]
 pub enum ExpressionKind {
     Literal(Literal),
-    Value(String),
+    Variable(String),
     UnaryOperation(UnaryLiteral, Box<Expression>),
     BinaryOperation(BinaryLiteral, Box<Expression>, Box<Expression>),
     TernaryOperation(Box<Expression>, Box<Expression>, Box<Expression>),
+    TypeCheckOperation(Box<Expression>, String),
     MemberExpression(Box<Expression>, Box<Expression>),
     SubscriptExpression(Box<Expression>, Box<Expression>),
     FunctionCallExpression(String, Vec<Expression>),
@@ -180,7 +193,6 @@ pub enum BinaryLiteral {
     Lte,
     Eq,
     NotEq,
-    Is,
     In,
 }
 
@@ -209,7 +221,7 @@ impl_node_trait!(
     Service,
     Function,
     Argument,
-    Binding,
+    LetBinding,
     RuleGroup,
     PathCapture,
     PathCaptureGroup,

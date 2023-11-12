@@ -78,7 +78,7 @@ fn parse_expression(node: &Node, context: &Context) -> Expression {
         span: Span(node.range()),
         kind: match node.kind() {
             "literal" => ExpressionKind::Literal(parse_literal(node, context)),
-            "identifier" => ExpressionKind::Value(get_text(node, context).into()),
+            "identifier" => ExpressionKind::Variable(get_text(node, context).into()),
             "unary_expression" => ExpressionKind::UnaryOperation(
                 match node.child_by_field_name("operator").unwrap().kind() {
                     "!" => UnaryLiteral::Not,
@@ -110,7 +110,6 @@ fn parse_expression(node: &Node, context: &Context) -> Expression {
                     "!=" => BinaryLiteral::NotEq,
                     ">=" => BinaryLiteral::Lte,
                     ">" => BinaryLiteral::Lt,
-                    "is" => BinaryLiteral::Is,
                     "in" => BinaryLiteral::In,
                     _ => panic!(),
                 },
@@ -137,7 +136,16 @@ fn parse_expression(node: &Node, context: &Context) -> Expression {
                     context,
                 )),
             ),
-            "paran" => parse_expression(&node.child_by_field_name("expression").unwrap(), context).kind,
+            "typecheck_expression" => ExpressionKind::TypeCheckOperation(
+                Box::new(parse_expression(
+                    &node.child_by_field_name("expression").unwrap(),
+                    context,
+                )),
+                get_text(&node.child_by_field_name("type").unwrap(), context).into(),
+            ),
+            "paran" => {
+                parse_expression(&node.child_by_field_name("expression").unwrap(), context).kind
+            }
             "member_expression" => ExpressionKind::MemberExpression(
                 Box::new(parse_expression(
                     &node.child_by_field_name("object").unwrap(),
@@ -167,7 +175,7 @@ fn parse_expression(node: &Node, context: &Context) -> Expression {
                     .collect(),
             ),
             _ => panic!(),
-        }
+        },
     }
 }
 
@@ -183,14 +191,14 @@ fn parse_function(node: &Node, context: &Context) -> Function {
             .map(|node| Argument {
                 id: NodeID::new(),
                 span: Span(node.range()),
-                name: get_text(&node, context).into()
+                name: get_text(&node, context).into(),
             })
             .collect(),
         let_bindings: node
             .child_by_field_name("body")
             .unwrap()
             .children_by_field_name("statement", &mut node.walk())
-            .map(|node| Binding {
+            .map(|node| LetBinding {
                 id: NodeID::new(),
                 span: Span(node.range()),
                 name: get_text(&node.child_by_field_name("name").unwrap(), context).into(),
@@ -246,21 +254,18 @@ fn parse_rule_groups(node: &Node, context: &Context) -> RuleGroup {
                 "path_string" => MatchPathLiteral::PathIdentifier(
                     get_text(&node.child_by_field_name("path").unwrap(), context).into(),
                 ),
-                "path_capture_string" => MatchPathLiteral::PathCapture(
-                    PathCapture{
-        id: NodeID::new(),
-        span: Span(node.range()),
-        name: get_text(&node.child_by_field_name("value").unwrap(), context).into(),
-                    },
-                ),
-                "path_capture_group_string" => MatchPathLiteral::PathCaptureGroup(
-                    PathCaptureGroup{
+                "path_capture_string" => MatchPathLiteral::PathCapture(PathCapture {
+                    id: NodeID::new(),
+                    span: Span(node.range()),
+                    name: get_text(&node.child_by_field_name("value").unwrap(), context).into(),
+                }),
+                "path_capture_group_string" => {
+                    MatchPathLiteral::PathCaptureGroup(PathCaptureGroup {
                         id: NodeID::new(),
                         span: Span(node.range()),
                         name: get_text(&node.child_by_field_name("value").unwrap(), context).into(),
-                                    },
-                    
-                ),
+                    })
+                }
                 _ => panic!(),
             })
             .collect(),
