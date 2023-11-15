@@ -49,7 +49,7 @@ pub struct Service {
     pub rule_groups: Vec<RuleGroup>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ServiceType {
     Firestore,
     Storage,
@@ -119,7 +119,7 @@ pub struct Rule {
     pub condition: Expression,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Permission {
     Read,
     Get,
@@ -167,7 +167,7 @@ pub enum PathLiteral {
     PathReference(Box<Expression>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum UnaryLiteral {
     Not,
     Tilde,
@@ -175,7 +175,7 @@ pub enum UnaryLiteral {
     Minus,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum BinaryLiteral {
     LogicalAnd,
     LogicalOr,

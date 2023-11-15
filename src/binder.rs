@@ -1,47 +1,11 @@
-use nanoid::nanoid;
-
-use crate::ast::{
-    Argument, Ast, Expression, ExpressionKind, Function, LetBinding, MatchPathLiteral, NodeID,
-    PathCapture, PathCaptureGroup, Rule, RuleGroup, RulesTree, Service,
+use crate::{
+    ast::{
+        Ast, Expression, ExpressionKind, Function, MatchPathLiteral, NodeID, Rule, RuleGroup,
+        RulesTree, Service,
+    },
+    symbol::{Bindings, FunctionNodeRef, SymbolID, SymbolReferences, VariableNodeRef},
 };
 use std::collections::HashMap;
-
-#[derive(Clone, Copy, Debug)]
-pub enum VariableNodeRef<'a> {
-    LetBinding(&'a LetBinding),
-    FunctionArgument(&'a Argument),
-    FunctionPhantomArgument(&'static str, &'a Function),
-    PathCapture(&'a PathCapture),
-    PathCaptureGroup(&'a PathCaptureGroup),
-    RuleGroupPhantomArgument(&'static str, &'a RuleGroup),
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum FunctionNodeRef<'a> {
-    Function(&'a Function),
-    GlobalFunction(&'static str),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct SymbolID(pub String);
-
-impl SymbolID {
-    pub fn new() -> SymbolID {
-        SymbolID(nanoid!())
-    }
-}
-
-#[derive(Clone)]
-pub struct Bindings<'a> {
-    pub variable_table: HashMap<&'a NodeID, (SymbolID, VariableNodeRef<'a>)>,
-    pub function_table: HashMap<&'a NodeID, (SymbolID, FunctionNodeRef<'a>)>,
-}
-
-#[derive(Clone, Debug)]
-pub struct SymbolReferences<'a> {
-    pub variable_table: HashMap<SymbolID, Vec<&'a NodeID>>,
-    pub function_table: HashMap<SymbolID, Vec<&'a NodeID>>,
-}
 
 impl std::fmt::Debug for Bindings<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
