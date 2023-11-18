@@ -4,6 +4,7 @@ use crate::{
         RulesTree, Service,
     },
     symbol::{Bindings, FunctionNodeRef, SymbolID, SymbolReferences, VariableNodeRef},
+    ty::{FunctionInterface, TypeKind},
 };
 use std::collections::HashMap;
 
@@ -22,17 +23,14 @@ impl std::fmt::Debug for Bindings<'_> {
                         VariableNodeRef::FunctionArgument(x) => {
                             format!("{} ({}) -> ({}:{})", x.name, k.0, x.id.0, v.0 .0)
                         }
-                        VariableNodeRef::FunctionPhantomArgument(n, x) => {
-                            format!("{} ({}) -> ({}:{})", n, k.0, x.id.0, v.0 .0)
-                        }
                         VariableNodeRef::PathCapture(x) => {
                             format!("{} ({}) -> ({}:{})", x.name, k.0, x.id.0, v.0 .0)
                         }
                         VariableNodeRef::PathCaptureGroup(x) => {
                             format!("{} ({}) -> ({}:{})", x.name, k.0, x.id.0, v.0 .0)
                         }
-                        VariableNodeRef::RuleGroupPhantomArgument(n, x) => {
-                            format!("{} ({}) -> ({}:{})", n, k.0, x.id.0, v.0 .0)
+                        VariableNodeRef::GlobalVariable(t) => {
+                            format!("{:#?} ({}) -> (__global__:{})", t, k.0, v.0 .0)
                         }
                     })
                     .collect::<Vec<String>>(),
@@ -47,7 +45,7 @@ impl std::fmt::Debug for Bindings<'_> {
                             format!("{} ({}) -> ({}:{})", x.name, k.0, x.id.0, v.0 .0)
                         }
                         FunctionNodeRef::GlobalFunction(n) => {
-                            format!("{} ({}) -> (__global__:{})", n, k.0, v.0 .0)
+                            format!("{:#?} ({}) -> (__global__:{})", n, k.0, v.0 .0)
                         }
                     })
                     .collect::<Vec<String>>(),
@@ -60,6 +58,7 @@ impl std::fmt::Debug for Bindings<'_> {
 pub struct Definitions<'a> {
     pub variables: HashMap<&'a str, (SymbolID, VariableNodeRef<'a>)>,
     pub functions: HashMap<&'a str, (SymbolID, FunctionNodeRef<'a>)>,
+    pub namespaces: HashMap<&'a str, HashMap<&'a str, (SymbolID, FunctionNodeRef<'a>)>>,
 }
 
 #[derive(Clone, Debug)]
@@ -100,6 +99,38 @@ fn search_function_symbol<'a, 'b, 'c>(
         .find(|option| option.is_some())
         .flatten()
         .cloned()
+}
+
+enum MemberSymbol<'a> {
+    VariableSymbol(SymbolID, VariableNodeRef<'a>),
+    FunctionSymbol(SymbolID, FunctionNodeRef<'a>),
+}
+
+fn search_member_symbol<'a, 'b, 'c>(
+    name: &'c str,
+    member: &'a Box<Expression>,
+    scopes: &'b mut Vec<Definitions<'a>>,
+) -> Option<MemberSymbol<'a>> {
+    scopes
+        .iter()
+        .rev()
+        .map(|scope| {
+            if let Some(namespace) = scope.namespaces.get(name) {
+                if let ExpressionKind::FunctionCallExpression(function_name, _) = &member.kind {
+                    namespace.get(&**function_name).and_then(|symbol| {
+                        Some(MemberSymbol::FunctionSymbol(symbol.0.clone(), symbol.1))
+                    })
+                } else {
+                    panic!()
+                }
+            } else {
+                scope.variables.get(name).and_then(|symbol| {
+                    Some(MemberSymbol::VariableSymbol(symbol.0.clone(), symbol.1))
+                })
+            }
+        })
+        .find(|option| option.is_some())
+        .flatten()
 }
 
 fn bind_expression<'a, 'b>(
@@ -164,13 +195,37 @@ fn bind_expression<'a, 'b>(
         ExpressionKind::TypeCheckOperation(expression, _type_literal) => {
             bind_expression(&expression, scopes_definitions, bindings, bind_lint_results);
         }
-        ExpressionKind::MemberExpression(object_expression, _member_expression) => {
-            bind_expression(
-                &object_expression,
-                scopes_definitions,
-                bindings,
-                bind_lint_results,
-            );
+        ExpressionKind::MemberExpression(object_expression, member_expression) => {
+            if let ExpressionKind::Variable(name) = &object_expression.kind {
+                if let Some(symbol) =
+                    search_member_symbol(&name, &member_expression, scopes_definitions)
+                {
+                    match symbol {
+                        MemberSymbol::VariableSymbol(id, node_ref) => {
+                            let _ = bindings
+                                .variable_table
+                                .insert(&expression.id, (id, node_ref));
+                        }
+                        MemberSymbol::FunctionSymbol(id, node_ref) => {
+                            let _ = bindings
+                                .function_table
+                                .insert(&expression.id, (id, node_ref));
+                        }
+                    }
+                } else {
+                    bind_lint_results.push(BindLintResult {
+                        node_id: &expression.id,
+                        kind: BindLintKind::VariableNotFound,
+                    })
+                }
+            } else {
+                bind_expression(
+                    &object_expression,
+                    scopes_definitions,
+                    bindings,
+                    bind_lint_results,
+                )
+            }
         }
         ExpressionKind::SubscriptExpression(object_expression, subscript_expression) => {
             bind_expression(
@@ -221,27 +276,12 @@ fn bind_function<'a, 'b>(
     let mut definitions = Definitions {
         variables: HashMap::new(),
         functions: HashMap::new(),
+        namespaces: HashMap::new(),
     };
-
-    definitions.variables.insert(
-        "resource",
-        (
-            SymbolID::new(),
-            VariableNodeRef::FunctionPhantomArgument("resource", function),
-        ),
-    );
-
-    definitions.variables.insert(
-        "request",
-        (
-            SymbolID::new(),
-            VariableNodeRef::FunctionPhantomArgument("request", function),
-        ),
-    );
 
     for arg in function.arguments.iter() {
         let _ = definitions.variables.insert(
-            &arg.name as &str,
+            &*arg.name,
             (SymbolID::new(), VariableNodeRef::FunctionArgument(arg)),
         );
     }
@@ -257,7 +297,7 @@ fn bind_function<'a, 'b>(
         );
 
         let _ = scopes_definitions.last_mut().unwrap().variables.insert(
-            &let_binding.name as &str,
+            &*let_binding.name,
             (SymbolID::new(), VariableNodeRef::LetBinding(let_binding)),
         );
     }
@@ -292,11 +332,11 @@ fn bind_rule_group<'a, 'b>(
             .map(|match_path| match match_path {
                 MatchPathLiteral::PathIdentifier(_) => None,
                 MatchPathLiteral::PathCapture(path_capture) => Some((
-                    &path_capture.name as &str,
+                    &*path_capture.name,
                     (SymbolID::new(), VariableNodeRef::PathCapture(&path_capture)),
                 )),
                 MatchPathLiteral::PathCaptureGroup(path_capture_group) => Some((
-                    &path_capture_group.name as &str,
+                    &*path_capture_group.name,
                     (
                         SymbolID::new(),
                         VariableNodeRef::PathCaptureGroup(&path_capture_group),
@@ -306,23 +346,8 @@ fn bind_rule_group<'a, 'b>(
             .flatten()
             .collect::<HashMap<&str, (SymbolID, VariableNodeRef)>>(),
         functions: HashMap::new(),
+        namespaces: HashMap::new(),
     });
-
-    scopes_definitions.last_mut().unwrap().variables.insert(
-        "resource",
-        (
-            SymbolID::new(),
-            VariableNodeRef::RuleGroupPhantomArgument("resource", rule_group),
-        ),
-    );
-
-    scopes_definitions.last_mut().unwrap().variables.insert(
-        "request",
-        (
-            SymbolID::new(),
-            VariableNodeRef::RuleGroupPhantomArgument("request", rule_group),
-        ),
-    );
 
     for function in rule_group.functions.iter() {
         bind_function(function, scopes_definitions, bindings, bind_lint_results);
@@ -352,11 +377,12 @@ fn bind_service<'a, 'b>(
             .iter()
             .map(|function| {
                 (
-                    &function.name as &str,
+                    &*function.name,
                     (SymbolID::new(), FunctionNodeRef::Function(&function)),
                 )
             })
             .collect(),
+        namespaces: HashMap::new(),
     });
 
     for function in service.functions.iter() {
@@ -381,7 +407,14 @@ fn bind_rules_tree<'a, 'b>(
     }
 }
 
-pub fn bind(ast: &Ast) -> (Bindings, SymbolReferences, Vec<BindLintResult>) {
+pub fn bind<'a>(
+    ast: &'a Ast,
+    globals: &'a (
+        HashMap<&'static str, TypeKind>,
+        HashMap<&'static str, Vec<FunctionInterface>>,
+        HashMap<&'static str, HashMap<&'static str, Vec<FunctionInterface>>>,
+    ),
+) -> (Bindings<'a>, SymbolReferences<'a>, Vec<BindLintResult<'a>>) {
     let mut bindings = Bindings {
         variable_table: HashMap::new(),
         function_table: HashMap::new(),
@@ -393,28 +426,44 @@ pub fn bind(ast: &Ast) -> (Bindings, SymbolReferences, Vec<BindLintResult>) {
     };
 
     let mut scopes_definitions = Vec::<Definitions>::from([Definitions {
-        variables: HashMap::new(),
-        functions: HashMap::from([
-            (
-                "get",
-                (SymbolID::new(), FunctionNodeRef::GlobalFunction("get")),
-            ),
-            (
-                "getAfter",
-                (SymbolID::new(), FunctionNodeRef::GlobalFunction("getAfter")),
-            ),
-            (
-                "exists",
-                (SymbolID::new(), FunctionNodeRef::GlobalFunction("exists")),
-            ),
-            (
-                "existsAfter",
+        variables: globals
+            .0
+            .iter()
+            .map(|(name, type_kind)| {
                 (
-                    SymbolID::new(),
-                    FunctionNodeRef::GlobalFunction("existsAfter"),
-                ),
-            ),
-        ]),
+                    *name,
+                    (SymbolID::new(), VariableNodeRef::GlobalVariable(&type_kind)),
+                )
+            })
+            .collect(),
+        functions: globals
+            .1
+            .iter()
+            .map(|(name, func)| {
+                (
+                    *name,
+                    (SymbolID::new(), FunctionNodeRef::GlobalFunction(&func)),
+                )
+            })
+            .collect(),
+        namespaces: globals
+            .2
+            .iter()
+            .map(|(namespace, functions)| {
+                (
+                    *namespace,
+                    functions
+                        .iter()
+                        .map(|(name, func)| {
+                            (
+                                *name,
+                                (SymbolID::new(), FunctionNodeRef::GlobalFunction(&func)),
+                            )
+                        })
+                        .collect(),
+                )
+            })
+            .collect(),
     }]);
 
     let mut bind_lint_results = Vec::<BindLintResult>::new();

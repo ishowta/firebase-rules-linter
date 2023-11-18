@@ -3,6 +3,7 @@ use std::fs;
 use crate::{
     binder::bind,
     checker::{check, TypeCheckContext},
+    globals::get_globals,
     parser::parse,
 };
 
@@ -20,7 +21,9 @@ fn main() {
 
     let ast = parse(&code.into());
 
-    let (bindings, symbol_references, bind_lint_result) = bind(&ast);
+    let globals = get_globals();
+
+    let (bindings, symbol_references, bind_lint_result) = bind(&ast, &globals);
 
     let type_check_context = TypeCheckContext {
         bindings: &bindings,

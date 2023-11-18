@@ -40,9 +40,9 @@ pub enum MemberKind {
     AnyMember,
 }
 
-pub type Function = (Vec<TypeKind>, TypeKind);
+pub type FunctionInterface = (Vec<TypeKind>, TypeKind);
 
 pub struct Interface {
-    pub functions: HashMap<FunctionKind, Vec<Function>>,
+    pub functions: HashMap<FunctionKind, Vec<FunctionInterface>>,
     pub members: HashMap<MemberKind, TypeKind>,
 }
