@@ -1,7 +1,12 @@
+use core::panic;
+use std::{collections::HashMap, iter::zip};
+
 use crate::{
-    ast::{Ast, Expression, ExpressionKind, Literal, NodeID, Rule, RuleGroup},
-    symbol::{Bindings, SymbolReferences, VariableNodeRef},
-    ty::TypeKind,
+    ast::{
+        Ast, BinaryLiteral, Expression, ExpressionKind, Function, Literal, NodeID, Rule, RuleGroup,
+    },
+    symbol::{Bindings, FunctionNodeRef, SymbolReferences, VariableNodeRef},
+    ty::{FunctionKind, Interface, MemberKind, TypeKind},
 };
 
 #[derive(Clone, Debug)]
@@ -14,6 +19,7 @@ pub struct TypeCheckResult<'a> {
 pub struct TypeCheckContext<'a> {
     pub bindings: &'a Bindings<'a>,
     pub symbol_references: &'a SymbolReferences<'a>,
+    pub interfaces: &'a HashMap<TypeKind, Interface>,
 }
 
 fn assert_type<'a, 'b>(
@@ -21,28 +27,134 @@ fn assert_type<'a, 'b>(
     kind: &'b TypeKind,
     expr: &'a Expression,
 ) -> Option<TypeCheckResult<'a>> {
-    if *ty != *kind {
+    if ty != kind && *ty != TypeKind::Any && *kind != TypeKind::Any {
         Some(TypeCheckResult {
             node_id: &expr.id,
-            reason: format!("Expected {:#?}, Get {:#?}", kind, ty).into(),
+            reason: format!("Expected {:?}, Get {:?}", kind, ty).into(),
         })
     } else {
         None
     }
 }
 
+fn assert_type_candidates<'a, 'b>(
+    ty: &'b TypeKind,
+    kind_candidates: Vec<&'b TypeKind>,
+    expr: &'a Expression,
+) -> Option<TypeCheckResult<'a>> {
+    let passed = !kind_candidates.iter().all(|kind_candidate| {
+        ty != *kind_candidate && *ty != TypeKind::Any && **kind_candidate != TypeKind::Any
+    });
+    if passed {
+        None
+    } else {
+        Some(TypeCheckResult {
+            node_id: &expr.id,
+            reason: format!("Expected {:?}, Get {:?}", kind_candidates, ty).into(),
+        })
+    }
+}
+
+fn check_function_args<'a>(
+    node_id: &'a NodeID,
+    functions: &Vec<(Vec<TypeKind>, TypeKind)>,
+    args: Vec<TypeKind>,
+) -> (TypeKind, Vec<TypeCheckResult<'a>>) {
+    if let Some(return_ty) = functions.iter().find_map(|(params, return_ty)| {
+        if zip(&args, params)
+            .all(|(arg, param)| arg == param || *arg == TypeKind::Any || *param == TypeKind::Any)
+        {
+            Some(return_ty)
+        } else {
+            None
+        }
+    }) {
+        (*return_ty, vec![])
+    } else {
+        (
+            TypeKind::Any,
+            vec![TypeCheckResult {
+                node_id: node_id,
+                reason: "function or operator type mismatch".into(),
+            }],
+        )
+    }
+}
+
+fn check_interface_function_calling<'a>(
+    node_id: &'a NodeID,
+    context: &'a TypeCheckContext,
+    interface_ty: TypeKind,
+    function_kind: FunctionKind,
+    args: Vec<TypeKind>,
+) -> (TypeKind, Vec<TypeCheckResult<'a>>) {
+    if interface_ty == TypeKind::Any {
+        return (TypeKind::Any, vec![]);
+    }
+    if function_kind == FunctionKind::BinaryOp(BinaryLiteral::Eq)
+        || function_kind == FunctionKind::BinaryOp(BinaryLiteral::NotEq)
+    {
+        if interface_ty == TypeKind::Null || args[0] == TypeKind::Null {
+            return (TypeKind::Boolean, vec![]);
+        }
+    }
+    if let Some(functions) = context
+        .interfaces
+        .get(&interface_ty)
+        .unwrap()
+        .functions
+        .get(&function_kind)
+    {
+        check_function_args(node_id, functions, args)
+    } else {
+        (
+            TypeKind::Any,
+            vec![TypeCheckResult {
+                node_id: node_id,
+                reason: format!(
+                    "function or operator not found. {:?} with {:?}",
+                    interface_ty, function_kind
+                )
+                .into(),
+            }],
+        )
+    }
+}
+
+fn check_function<'a, 'b>(
+    caller_id: &'a NodeID,
+    function: &'a Function,
+    args: &'b Vec<TypeKind>,
+    context: &'a TypeCheckContext<'a>,
+) -> (TypeKind, Vec<TypeCheckResult<'a>>) {
+    let mut res: Vec<TypeCheckResult<'a>> = vec![];
+    if function.arguments.len() != args.len() {
+        res.push(TypeCheckResult {
+            node_id: caller_id,
+            reason: format!(
+                "params length not matched. expected {} but get {}",
+                function.arguments.len(),
+                args.len()
+            )
+            .into(),
+        })
+    }
+    let (return_ty, return_res) = check_expression(&function.return_expression, context);
+    (return_ty, res.into_iter().chain(return_res).collect())
+}
+
 fn check_expression<'a>(
     expr: &'a Expression,
     context: &'a TypeCheckContext<'a>,
 ) -> (TypeKind, Vec<TypeCheckResult<'a>>) {
-    match expr.kind {
-        ExpressionKind::Literal(Literal::Bool(_)) => todo!(),
-        ExpressionKind::Literal(Literal::Float(_)) => todo!(),
-        ExpressionKind::Literal(Literal::Int(_)) => todo!(),
-        ExpressionKind::Literal(Literal::String(_)) => todo!(),
-        ExpressionKind::Literal(Literal::List(_)) => todo!(),
-        ExpressionKind::Literal(Literal::Path(_)) => todo!(),
-        ExpressionKind::Literal(Literal::Null) => todo!(),
+    match &expr.kind {
+        ExpressionKind::Literal(Literal::Bool(_)) => (TypeKind::Boolean, vec![]),
+        ExpressionKind::Literal(Literal::Float(_)) => (TypeKind::Float, vec![]),
+        ExpressionKind::Literal(Literal::Int(_)) => (TypeKind::Integer, vec![]),
+        ExpressionKind::Literal(Literal::String(_)) => (TypeKind::String, vec![]),
+        ExpressionKind::Literal(Literal::List(_)) => (TypeKind::List, vec![]),
+        ExpressionKind::Literal(Literal::Path(_)) => (TypeKind::Path, vec![]),
+        ExpressionKind::Literal(Literal::Null) => (TypeKind::Null, vec![]),
         ExpressionKind::Variable(_) => match context
             .bindings
             .variable_table
@@ -50,19 +162,231 @@ fn check_expression<'a>(
             .and_then(|node| Some(node.1))
         {
             Some(VariableNodeRef::LetBinding(node)) => check_expression(&node.expression, context),
-            Some(VariableNodeRef::FunctionArgument(node)) => todo!(),
-            Some(VariableNodeRef::PathCapture(node)) => todo!(),
-            Some(VariableNodeRef::PathCaptureGroup(node)) => todo!(),
-            Some(VariableNodeRef::GlobalVariable(type_kind)) => todo!(),
-            None => todo!(),
+            Some(VariableNodeRef::FunctionArgument(_)) => (TypeKind::Any, vec![]),
+            Some(VariableNodeRef::PathCapture(_)) => (TypeKind::String, vec![]),
+            Some(VariableNodeRef::PathCaptureGroup(_)) => (TypeKind::String, vec![]),
+            Some(VariableNodeRef::GlobalVariable(type_kind)) => (*type_kind, vec![]),
+            None => panic!(
+                "{:?} not found in {:?}",
+                expr, context.bindings.variable_table
+            ),
         },
-        ExpressionKind::UnaryOperation(_, _) => todo!(),
-        ExpressionKind::BinaryOperation(_, _, _) => todo!(),
-        ExpressionKind::TernaryOperation(_, _, _) => todo!(),
-        ExpressionKind::TypeCheckOperation(_, _) => todo!(),
-        ExpressionKind::MemberExpression(_, _) => todo!(),
-        ExpressionKind::SubscriptExpression(_, _) => todo!(),
-        ExpressionKind::FunctionCallExpression(_, _) => todo!(),
+        ExpressionKind::UnaryOperation(literal, op_expr) => {
+            let (op_ty, op_res) = check_expression(&op_expr, context);
+            let (return_ty, return_res) = check_interface_function_calling(
+                &expr.id,
+                context,
+                op_ty,
+                FunctionKind::UnaryOp(*literal),
+                vec![],
+            );
+            (return_ty, op_res.into_iter().chain(return_res).collect())
+        }
+        ExpressionKind::BinaryOperation(literal, left_expr, right_expr) => {
+            let (left_ty, left_res) = check_expression(&left_expr, context);
+            let (right_ty, right_res) = check_expression(&right_expr, context);
+            let (return_ty, return_res) = if *literal == BinaryLiteral::In {
+                check_interface_function_calling(
+                    &expr.id,
+                    context,
+                    right_ty,
+                    FunctionKind::BinaryOp(*literal),
+                    vec![left_ty],
+                )
+            } else {
+                check_interface_function_calling(
+                    &expr.id,
+                    context,
+                    left_ty,
+                    FunctionKind::BinaryOp(*literal),
+                    vec![right_ty],
+                )
+            };
+            (
+                return_ty,
+                left_res
+                    .into_iter()
+                    .chain(right_res)
+                    .chain(return_res)
+                    .collect(),
+            )
+        }
+        ExpressionKind::TernaryOperation(cond_expr, true_expr, false_expr) => {
+            let (cond_ty, mut cond_res) = check_expression(&cond_expr, context);
+            if let Some(res_assert) = assert_type(&cond_ty, &TypeKind::Boolean, &cond_expr) {
+                cond_res.push(res_assert);
+            }
+            let (true_ty, true_res) = check_expression(&true_expr, context);
+            let (false_ty, false_res) = check_expression(&false_expr, context);
+            let assert_res = assert_type(&true_ty, &false_ty, expr);
+            (
+                if true_ty == TypeKind::Any {
+                    false_ty
+                } else {
+                    true_ty
+                },
+                cond_res
+                    .into_iter()
+                    .chain(true_res)
+                    .chain(false_res)
+                    .chain(if let Some(res) = assert_res {
+                        vec![res]
+                    } else {
+                        vec![]
+                    })
+                    .collect(),
+            )
+        }
+        ExpressionKind::TypeCheckOperation(target_expr, type_str) => {
+            let type_str_ty_candidates = match &**type_str {
+                "bool" => vec![&TypeKind::Boolean],
+                "int" => vec![&TypeKind::Integer],
+                "float" => vec![&TypeKind::Float],
+                "number" => vec![&TypeKind::Integer, &TypeKind::Float],
+                "string" => vec![&TypeKind::String],
+                "list" => vec![&TypeKind::List],
+                "map" => vec![&TypeKind::Map],
+                "timestamp" => vec![&TypeKind::Timestamp],
+                "duration" => vec![&TypeKind::Duration],
+                "path" => vec![&TypeKind::Path],
+                "latlng" => vec![&TypeKind::LatLng],
+                _ => panic!(),
+            };
+            let (target_ty, mut res) = check_expression(&target_expr, context);
+            if let Some(res_assert) =
+                assert_type_candidates(&target_ty, type_str_ty_candidates, expr)
+            {
+                res.push(res_assert);
+            }
+            (TypeKind::Boolean, res)
+        }
+        ExpressionKind::MemberExpression(obj_expr, member_expr) => {
+            // check is namespace
+            if let Some(_) = context.bindings.function_table.get(&member_expr.id) {
+                return check_expression(&member_expr, context);
+            }
+
+            let (obj_ty, mut res) = check_expression(&obj_expr, context);
+            if obj_ty == TypeKind::Any {
+                return (obj_ty, res);
+            }
+            match &member_expr.kind {
+                ExpressionKind::Variable(member_name) => {
+                    // check is interface member
+                    if let Some(member) = context.interfaces.get(&obj_ty).and_then(|interface| {
+                        interface
+                            .members
+                            .get(&MemberKind::Member(member_name.clone()))
+                    }) {
+                        return (*member, res);
+                    }
+
+                    // check is map
+                    if obj_ty != TypeKind::Map {
+                        res.push(TypeCheckResult {
+                            node_id: &member_expr.id,
+                            reason: "no map type don't have member".into(),
+                        })
+                    }
+                    return (TypeKind::Any, res);
+                }
+                ExpressionKind::FunctionCallExpression(fn_name, fn_args_expr) => {
+                    // check is interface function
+                    if let Some(function_candidates) =
+                        context.interfaces.get(&obj_ty).and_then(|interface| {
+                            interface
+                                .functions
+                                .get(&FunctionKind::Function(fn_name.clone()))
+                        })
+                    {
+                        let (args_ty, args_res) = fn_args_expr
+                            .iter()
+                            .map(|arg_expr| check_expression(arg_expr, context))
+                            .fold::<(Vec<TypeKind>, Vec<TypeCheckResult>), _>(
+                                (vec![], vec![]),
+                                |(mut acc_ty_list, acc_res_list), (arg_ty, arg_res)| {
+                                    acc_ty_list.push(arg_ty);
+                                    (
+                                        acc_ty_list,
+                                        acc_res_list.into_iter().chain(arg_res).collect(),
+                                    )
+                                },
+                            );
+                        let (return_ty, return_res) =
+                            check_function_args(&expr.id, function_candidates, args_ty);
+                        return (
+                            return_ty,
+                            res.into_iter().chain(args_res).chain(return_res).collect(),
+                        );
+                    } else {
+                        res.push(TypeCheckResult {
+                            node_id: &member_expr.id,
+                            reason: format!("{} not found", fn_name).into(),
+                        });
+                        return (TypeKind::Any, res);
+                    }
+                }
+                _ => {
+                    res.push(TypeCheckResult {
+                        node_id: &member_expr.id,
+                        reason: "map member must identifier".into(),
+                    });
+                    return (TypeKind::Any, res);
+                }
+            };
+        }
+        ExpressionKind::SubscriptExpression(obj_expr, subscript_expr) => {
+            let (obj_ty, obj_res) = check_expression(&obj_expr, context);
+            let (subscript_ty, subscript_res) = check_expression(&subscript_expr, context);
+            let (return_ty, return_res) = check_interface_function_calling(
+                &expr.id,
+                context,
+                obj_ty,
+                FunctionKind::Subscript,
+                vec![subscript_ty],
+            );
+            (
+                return_ty,
+                obj_res
+                    .into_iter()
+                    .chain(subscript_res)
+                    .chain(return_res)
+                    .collect(),
+            )
+        }
+        ExpressionKind::FunctionCallExpression(_, args_expr) => {
+            let (args_ty, args_res) = args_expr
+                .iter()
+                .map(|arg_expr| check_expression(arg_expr, context))
+                .fold::<(Vec<TypeKind>, Vec<TypeCheckResult>), _>(
+                    (vec![], vec![]),
+                    |(mut acc_ty_list, acc_res_list), (arg_ty, arg_res)| {
+                        acc_ty_list.push(arg_ty);
+                        (
+                            acc_ty_list,
+                            acc_res_list.into_iter().chain(arg_res).collect(),
+                        )
+                    },
+                );
+
+            match context
+                .bindings
+                .function_table
+                .get(&expr.id)
+                .and_then(|node| Some(node.1))
+            {
+                Some(FunctionNodeRef::Function(node)) => {
+                    let (return_ty, return_res) = check_function(&expr.id, node, &args_ty, context);
+                    (return_ty, args_res.into_iter().chain(return_res).collect())
+                }
+                Some(FunctionNodeRef::GlobalFunction(function_ty_candidates)) => {
+                    let (return_ty, return_res) =
+                        check_function_args(&expr.id, function_ty_candidates, args_ty);
+                    (return_ty, args_res.into_iter().chain(return_res).collect())
+                }
+                None => panic!(),
+            }
+        }
     }
 }
 

@@ -19,7 +19,7 @@ pub fn get_interfaces<'a>() -> HashMap<TypeKind, Interface> {
     let boolean_interface = Interface {
         functions: HashMap::from([
             (
-                FunctionKind::BinaryOp(BinaryLiteral::Add),
+                FunctionKind::BinaryOp(BinaryLiteral::LogicalAnd),
                 vec![(vec![TypeKind::Boolean], TypeKind::Boolean)],
             ),
             (
@@ -231,7 +231,7 @@ pub fn get_interfaces<'a>() -> HashMap<TypeKind, Interface> {
                 vec![(vec![TypeKind::Integer, TypeKind::Integer], TypeKind::List)],
             ),
             (
-                FunctionKind::InOp,
+                FunctionKind::BinaryOp(BinaryLiteral::In),
                 vec![(vec![TypeKind::Any], TypeKind::Boolean)],
             ),
             (
@@ -285,7 +285,7 @@ pub fn get_interfaces<'a>() -> HashMap<TypeKind, Interface> {
                 vec![(vec![TypeKind::Integer, TypeKind::Integer], TypeKind::Map)],
             ),
             (
-                FunctionKind::InOp,
+                FunctionKind::BinaryOp(BinaryLiteral::In),
                 vec![(vec![TypeKind::String], TypeKind::Boolean)],
             ),
             (
@@ -366,7 +366,7 @@ pub fn get_interfaces<'a>() -> HashMap<TypeKind, Interface> {
                 vec![(vec![TypeKind::Set], TypeKind::Boolean)],
             ),
             (
-                FunctionKind::InOp,
+                FunctionKind::BinaryOp(BinaryLiteral::In),
                 vec![(vec![TypeKind::Any], TypeKind::Boolean)],
             ),
             (

@@ -30,7 +30,7 @@ impl std::fmt::Debug for Bindings<'_> {
                             format!("{} ({}) -> ({}:{})", x.name, k.0, x.id.0, v.0 .0)
                         }
                         VariableNodeRef::GlobalVariable(t) => {
-                            format!("{:#?} ({}) -> (__global__:{})", t, k.0, v.0 .0)
+                            format!("{:?} ({}) -> (__global__:{})", t, k.0, v.0 .0)
                         }
                     })
                     .collect::<Vec<String>>(),
@@ -45,7 +45,7 @@ impl std::fmt::Debug for Bindings<'_> {
                             format!("{} ({}) -> ({}:{})", x.name, k.0, x.id.0, v.0 .0)
                         }
                         FunctionNodeRef::GlobalFunction(n) => {
-                            format!("{:#?} ({}) -> (__global__:{})", n, k.0, v.0 .0)
+                            format!("{:?} ({}) -> (__global__:{})", n, k.0, v.0 .0)
                         }
                     })
                     .collect::<Vec<String>>(),
@@ -82,9 +82,7 @@ fn search_variable_symbol<'a, 'b, 'c>(
     scopes
         .iter()
         .rev()
-        .map(|scope| scope.variables.get(name))
-        .find(|option| option.is_some())
-        .flatten()
+        .find_map(|scope| scope.variables.get(name))
         .cloned()
 }
 
@@ -95,42 +93,30 @@ fn search_function_symbol<'a, 'b, 'c>(
     scopes
         .iter()
         .rev()
-        .map(|scope| scope.functions.get(name))
-        .find(|option| option.is_some())
-        .flatten()
+        .find_map(|scope| scope.functions.get(name))
         .cloned()
 }
 
-enum MemberSymbol<'a> {
-    VariableSymbol(SymbolID, VariableNodeRef<'a>),
-    FunctionSymbol(SymbolID, FunctionNodeRef<'a>),
-}
-
-fn search_member_symbol<'a, 'b, 'c>(
+fn search_namespace_symbol<'a, 'b, 'c>(
     name: &'c str,
     member: &'a Box<Expression>,
     scopes: &'b mut Vec<Definitions<'a>>,
-) -> Option<MemberSymbol<'a>> {
+) -> Option<(SymbolID, FunctionNodeRef<'a>)> {
     scopes
         .iter()
         .rev()
-        .map(|scope| {
+        .find_map(|scope| {
             if let Some(namespace) = scope.namespaces.get(name) {
                 if let ExpressionKind::FunctionCallExpression(function_name, _) = &member.kind {
-                    namespace.get(&**function_name).and_then(|symbol| {
-                        Some(MemberSymbol::FunctionSymbol(symbol.0.clone(), symbol.1))
-                    })
+                    namespace.get(&**function_name)
                 } else {
                     panic!()
                 }
             } else {
-                scope.variables.get(name).and_then(|symbol| {
-                    Some(MemberSymbol::VariableSymbol(symbol.0.clone(), symbol.1))
-                })
+                None
             }
         })
-        .find(|option| option.is_some())
-        .flatten()
+        .cloned()
 }
 
 fn bind_expression<'a, 'b>(
@@ -196,35 +182,34 @@ fn bind_expression<'a, 'b>(
             bind_expression(&expression, scopes_definitions, bindings, bind_lint_results);
         }
         ExpressionKind::MemberExpression(object_expression, member_expression) => {
+            bind_expression(
+                &object_expression,
+                scopes_definitions,
+                bindings,
+                bind_lint_results,
+            );
+
             if let ExpressionKind::Variable(name) = &object_expression.kind {
                 if let Some(symbol) =
-                    search_member_symbol(&name, &member_expression, scopes_definitions)
+                    search_namespace_symbol(&name, member_expression, scopes_definitions)
                 {
-                    match symbol {
-                        MemberSymbol::VariableSymbol(id, node_ref) => {
-                            let _ = bindings
-                                .variable_table
-                                .insert(&expression.id, (id, node_ref));
-                        }
-                        MemberSymbol::FunctionSymbol(id, node_ref) => {
-                            let _ = bindings
-                                .function_table
-                                .insert(&expression.id, (id, node_ref));
-                        }
-                    }
-                } else {
-                    bind_lint_results.push(BindLintResult {
-                        node_id: &expression.id,
-                        kind: BindLintKind::VariableNotFound,
-                    })
+                    let _ = bindings
+                        .function_table
+                        .insert(&member_expression.id, symbol);
                 }
-            } else {
-                bind_expression(
-                    &object_expression,
-                    scopes_definitions,
-                    bindings,
-                    bind_lint_results,
-                )
+            }
+
+            if let ExpressionKind::FunctionCallExpression(_, args_expression) =
+                &member_expression.kind
+            {
+                for arg_expression in args_expression {
+                    bind_expression(
+                        &arg_expression,
+                        scopes_definitions,
+                        bindings,
+                        bind_lint_results,
+                    );
+                }
             }
         }
         ExpressionKind::SubscriptExpression(object_expression, subscript_expression) => {
@@ -301,6 +286,13 @@ fn bind_function<'a, 'b>(
             (SymbolID::new(), VariableNodeRef::LetBinding(let_binding)),
         );
     }
+
+    bind_expression(
+        &function.return_expression,
+        scopes_definitions,
+        bindings,
+        bind_lint_results,
+    );
 
     scopes_definitions.pop();
 }

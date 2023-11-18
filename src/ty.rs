@@ -28,8 +28,6 @@ pub enum FunctionKind {
     Function(String),
     UnaryOp(UnaryLiteral),
     BinaryOp(BinaryLiteral),
-    TernaryOp,
-    InOp,
     Subscript,
     SubscriptRange,
 }
@@ -42,6 +40,7 @@ pub enum MemberKind {
 
 pub type FunctionInterface = (Vec<TypeKind>, TypeKind);
 
+#[derive(Clone, Debug)]
 pub struct Interface {
     pub functions: HashMap<FunctionKind, Vec<FunctionInterface>>,
     pub members: HashMap<MemberKind, TypeKind>,

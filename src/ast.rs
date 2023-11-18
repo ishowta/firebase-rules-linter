@@ -23,10 +23,10 @@ impl std::fmt::Debug for Span {
         f.debug_tuple("Span")
             .field(&format!(
                 "({},{}), ({},{})",
-                &self.0.start_point.row,
-                &self.0.start_point.column,
-                &self.0.end_point.row,
-                &self.0.end_point.column
+                &self.0.start_point.row + 1,
+                &self.0.start_point.column + 1,
+                &self.0.end_point.row + 1,
+                &self.0.end_point.column + 1
             ))
             .finish()
     }
@@ -49,7 +49,7 @@ pub struct Service {
     pub rule_groups: Vec<RuleGroup>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ServiceType {
     Firestore,
     Storage,
@@ -119,7 +119,7 @@ pub struct Rule {
     pub condition: Expression,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Permission {
     Read,
     Get,
@@ -167,7 +167,7 @@ pub enum PathLiteral {
     PathReference(Box<Expression>),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum UnaryLiteral {
     Not,
     Tilde,
@@ -175,7 +175,7 @@ pub enum UnaryLiteral {
     Minus,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BinaryLiteral {
     LogicalAnd,
     LogicalOr,
