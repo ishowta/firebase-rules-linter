@@ -2,7 +2,6 @@
 
 ## Type System
 
-- [ ] Type inference (null literal type)
 - [ ] Typing function parameter
 - [ ] Generics (List[T], Map[T], Set[T])
 - [ ] Union Types (integer | float, List[string | number])
@@ -14,6 +13,7 @@
 
 - [ ] Request/Resource validation linting
 - [ ] Warn on Any
+- [ ] non-nullable
 
 ## Refine & Test
 

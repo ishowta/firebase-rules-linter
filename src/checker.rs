@@ -3,7 +3,7 @@ use std::{collections::HashMap, iter::zip};
 
 use crate::{
     ast::{
-        Ast, BinaryLiteral, Expression, ExpressionKind, Function, Literal, NodeID, Rule, RuleGroup,
+        Ast, BinaryLiteral, Expression, ExpressionKind, Function, Literal, Node, Rule, RuleGroup,
     },
     symbol::{Bindings, FunctionNodeRef, SymbolReferences, VariableNodeRef},
     ty::{FunctionKind, Interface, MemberKind, TypeKind},
@@ -11,7 +11,7 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub struct TypeCheckResult<'a> {
-    pub node_id: &'a NodeID,
+    pub node: &'a dyn Node,
     pub reason: String,
 }
 
@@ -29,7 +29,7 @@ fn assert_type<'a, 'b>(
 ) -> Option<TypeCheckResult<'a>> {
     if ty != kind && *ty != TypeKind::Any && *kind != TypeKind::Any {
         Some(TypeCheckResult {
-            node_id: &expr.id,
+            node: expr,
             reason: format!("Expected {:?}, Get {:?}", kind, ty).into(),
         })
     } else {
@@ -49,14 +49,14 @@ fn assert_type_candidates<'a, 'b>(
         None
     } else {
         Some(TypeCheckResult {
-            node_id: &expr.id,
+            node: expr,
             reason: format!("Expected {:?}, Get {:?}", kind_candidates, ty).into(),
         })
     }
 }
 
 fn check_function_args<'a>(
-    node_id: &'a NodeID,
+    expr: &'a dyn Node,
     functions: &Vec<(Vec<TypeKind>, TypeKind)>,
     args: Vec<TypeKind>,
 ) -> (TypeKind, Vec<TypeCheckResult<'a>>) {
@@ -74,7 +74,7 @@ fn check_function_args<'a>(
         (
             TypeKind::Any,
             vec![TypeCheckResult {
-                node_id: node_id,
+                node: expr,
                 reason: "function or operator type mismatch".into(),
             }],
         )
@@ -82,7 +82,7 @@ fn check_function_args<'a>(
 }
 
 fn check_interface_function_calling<'a>(
-    node_id: &'a NodeID,
+    node: &'a dyn Node,
     context: &'a TypeCheckContext,
     interface_ty: TypeKind,
     function_kind: FunctionKind,
@@ -105,12 +105,12 @@ fn check_interface_function_calling<'a>(
         .functions
         .get(&function_kind)
     {
-        check_function_args(node_id, functions, args)
+        check_function_args(node, functions, args)
     } else {
         (
             TypeKind::Any,
             vec![TypeCheckResult {
-                node_id: node_id,
+                node: node,
                 reason: format!(
                     "function or operator not found. {:?} with {:?}",
                     interface_ty, function_kind
@@ -122,7 +122,7 @@ fn check_interface_function_calling<'a>(
 }
 
 fn check_function<'a, 'b>(
-    caller_id: &'a NodeID,
+    caller: &'a dyn Node,
     function: &'a Function,
     args: &'b Vec<TypeKind>,
     context: &'a TypeCheckContext<'a>,
@@ -130,7 +130,7 @@ fn check_function<'a, 'b>(
     let mut res: Vec<TypeCheckResult<'a>> = vec![];
     if function.arguments.len() != args.len() {
         res.push(TypeCheckResult {
-            node_id: caller_id,
+            node: caller,
             reason: format!(
                 "params length not matched. expected {} but get {}",
                 function.arguments.len(),
@@ -174,7 +174,7 @@ fn check_expression<'a>(
         ExpressionKind::UnaryOperation(literal, op_expr) => {
             let (op_ty, op_res) = check_expression(&op_expr, context);
             let (return_ty, return_res) = check_interface_function_calling(
-                &expr.id,
+                expr,
                 context,
                 op_ty,
                 FunctionKind::UnaryOp(*literal),
@@ -187,7 +187,7 @@ fn check_expression<'a>(
             let (right_ty, right_res) = check_expression(&right_expr, context);
             let (return_ty, return_res) = if *literal == BinaryLiteral::In {
                 check_interface_function_calling(
-                    &expr.id,
+                    expr,
                     context,
                     right_ty,
                     FunctionKind::BinaryOp(*literal),
@@ -195,7 +195,7 @@ fn check_expression<'a>(
                 )
             } else {
                 check_interface_function_calling(
-                    &expr.id,
+                    expr,
                     context,
                     left_ty,
                     FunctionKind::BinaryOp(*literal),
@@ -284,7 +284,7 @@ fn check_expression<'a>(
                     // check is map
                     if obj_ty != TypeKind::Map {
                         res.push(TypeCheckResult {
-                            node_id: &member_expr.id,
+                            node: &**member_expr,
                             reason: "no map type don't have member".into(),
                         })
                     }
@@ -313,14 +313,14 @@ fn check_expression<'a>(
                                 },
                             );
                         let (return_ty, return_res) =
-                            check_function_args(&expr.id, function_candidates, args_ty);
+                            check_function_args(expr, function_candidates, args_ty);
                         return (
                             return_ty,
                             res.into_iter().chain(args_res).chain(return_res).collect(),
                         );
                     } else {
                         res.push(TypeCheckResult {
-                            node_id: &member_expr.id,
+                            node: &**member_expr,
                             reason: format!("{} not found", fn_name).into(),
                         });
                         return (TypeKind::Any, res);
@@ -328,7 +328,7 @@ fn check_expression<'a>(
                 }
                 _ => {
                     res.push(TypeCheckResult {
-                        node_id: &member_expr.id,
+                        node: &**member_expr,
                         reason: "map member must identifier".into(),
                     });
                     return (TypeKind::Any, res);
@@ -339,7 +339,7 @@ fn check_expression<'a>(
             let (obj_ty, obj_res) = check_expression(&obj_expr, context);
             let (subscript_ty, subscript_res) = check_expression(&subscript_expr, context);
             let (return_ty, return_res) = check_interface_function_calling(
-                &expr.id,
+                expr,
                 context,
                 obj_ty,
                 FunctionKind::Subscript,
@@ -376,12 +376,12 @@ fn check_expression<'a>(
                 .and_then(|node| Some(node.1))
             {
                 Some(FunctionNodeRef::Function(node)) => {
-                    let (return_ty, return_res) = check_function(&expr.id, node, &args_ty, context);
+                    let (return_ty, return_res) = check_function(expr, node, &args_ty, context);
                     (return_ty, args_res.into_iter().chain(return_res).collect())
                 }
                 Some(FunctionNodeRef::GlobalFunction(function_ty_candidates)) => {
                     let (return_ty, return_res) =
-                        check_function_args(&expr.id, function_ty_candidates, args_ty);
+                        check_function_args(expr, function_ty_candidates, args_ty);
                     (return_ty, args_res.into_iter().chain(return_res).collect())
                 }
                 None => panic!(),

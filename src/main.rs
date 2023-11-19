@@ -22,13 +22,13 @@ fn main() {
 
     let ast = parse(&code.into());
 
-    println!("{:#?}", ast);
+    // println!("{:#?}", ast);
 
     let globals = get_globals();
 
     let (bindings, symbol_references, bind_lint_result) = bind(&ast, &globals);
 
-    println!("{:#?}", bindings);
+    // println!("{:#?}", bindings);
     println!("{:#?}", bind_lint_result);
 
     let interfaces = get_interfaces();
@@ -41,6 +41,5 @@ fn main() {
 
     let type_check_result = check(&ast, &type_check_context);
 
-    println!("Type Error: {}", type_check_result.len());
     println!("{:#?}", type_check_result);
 }

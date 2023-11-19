@@ -201,6 +201,12 @@ pub trait Node {
     fn get_span(&self) -> &Span;
 }
 
+impl<'a> std::fmt::Debug for dyn Node + 'a {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?} {:?}", self.get_id(), self.get_span())
+    }
+}
+
 macro_rules! impl_node_trait {
     ($($T:ty),+ $(,)?) => {
         $(
