@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::ast::{BinaryLiteral, UnaryLiteral};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub enum TypeKind {
     Any,
     Null,
@@ -12,11 +12,11 @@ pub enum TypeKind {
     Float,
     Integer,
     LatLng,
-    List,
-    Map,
+    List(Box<TypeKind>),
+    Map(Box<TypeKind>),
     MapDiff,
     Path,
-    Set,
+    Set(Box<TypeKind>),
     String,
     Timestamp,
     Request,
@@ -31,17 +31,74 @@ impl TypeKind {
         }
     }
 
+    pub fn equal_exactly(&self, dst: &Self) -> bool {
+        match (self, dst) {
+            (TypeKind::Any, _) => true,
+            (_, TypeKind::Any) => true,
+            (TypeKind::Null, TypeKind::Null) => true,
+            (TypeKind::Boolean, TypeKind::Boolean) => true,
+            (TypeKind::Bytes, TypeKind::Bytes) => true,
+            (TypeKind::Duration, TypeKind::Duration) => true,
+            (TypeKind::Float, TypeKind::Float) => true,
+            (TypeKind::Integer, TypeKind::Integer) => true,
+            (TypeKind::LatLng, TypeKind::LatLng) => true,
+            (TypeKind::List(a), TypeKind::List(b)) => a.equal_exactly(b),
+            (TypeKind::Map(a), TypeKind::Map(b)) => a.equal_exactly(b),
+            (TypeKind::MapDiff, TypeKind::MapDiff) => true,
+            (TypeKind::Path, TypeKind::Path) => true,
+            (TypeKind::Set(a), TypeKind::Set(b)) => a.equal_exactly(b),
+            (TypeKind::String, TypeKind::String) => true,
+            (TypeKind::Timestamp, TypeKind::Timestamp) => true,
+            (TypeKind::Request, TypeKind::Request) => true,
+            (TypeKind::Resource, TypeKind::Resource) => true,
+            _ => false,
+        }
+    }
+
     pub fn is_type_coercion_to(&self, target: &Self) -> bool {
         self.get_coercion_list()
             .iter()
-            .any(|candidate| candidate == target)
+            .any(|candidate| candidate.equal_exactly(target))
+    }
+
+    pub fn is_any(&self) -> bool {
+        if let TypeKind::Any = self {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        if let TypeKind::Null = self {
+            true
+        } else {
+            false
+        }
     }
 
     pub fn equal_to(&self, dst: &Self) -> bool {
-        *self == *dst
-            || self.is_type_coercion_to(dst)
-            || *self == TypeKind::Any
-            || *dst == TypeKind::Any
+        (match (self, dst) {
+            (TypeKind::Any, _) => true,
+            (_, TypeKind::Any) => true,
+            (TypeKind::Null, TypeKind::Null) => true,
+            (TypeKind::Boolean, TypeKind::Boolean) => true,
+            (TypeKind::Bytes, TypeKind::Bytes) => true,
+            (TypeKind::Duration, TypeKind::Duration) => true,
+            (TypeKind::Float, TypeKind::Float) => true,
+            (TypeKind::Integer, TypeKind::Integer) => true,
+            (TypeKind::LatLng, TypeKind::LatLng) => true,
+            (TypeKind::List(a), TypeKind::List(b)) => a.equal_to(b),
+            (TypeKind::Map(a), TypeKind::Map(b)) => a.equal_to(b),
+            (TypeKind::MapDiff, TypeKind::MapDiff) => true,
+            (TypeKind::Path, TypeKind::Path) => true,
+            (TypeKind::Set(a), TypeKind::Set(b)) => a.equal_to(b),
+            (TypeKind::String, TypeKind::String) => true,
+            (TypeKind::Timestamp, TypeKind::Timestamp) => true,
+            (TypeKind::Request, TypeKind::Request) => true,
+            (TypeKind::Resource, TypeKind::Resource) => true,
+            _ => false,
+        } || self.is_type_coercion_to(dst))
     }
 }
 

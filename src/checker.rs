@@ -8,7 +8,7 @@ use crate::{
     },
     interfaces::Interfaces,
     symbol::{Bindings, FunctionNodeRef, SymbolReferences, VariableNodeRef},
-    ty::{FunctionKind, Interface, MemberKind, TypeKind},
+    ty::{FunctionKind, MemberKind, TypeKind},
 };
 
 #[derive(Clone, Debug)]
@@ -46,12 +46,12 @@ fn assert_type<'a, 'b>(
 
 fn assert_type_candidates<'a, 'b>(
     ty: &'b TypeKind,
-    kind_candidates: Vec<&'b TypeKind>,
+    kind_candidates: Vec<TypeKind>,
     expr: &'a Expression,
 ) -> Option<TypeCheckResult<'a>> {
     let passed = kind_candidates
         .iter()
-        .any(|kind_candidate| ty.equal_to(*kind_candidate));
+        .any(|kind_candidate| ty.equal_to(kind_candidate));
     if passed {
         None
     } else {
@@ -74,13 +74,16 @@ fn check_function_args<'a>(
             None
         }
     }) {
-        (*return_ty, vec![])
+        (return_ty.clone(), vec![])
     } else {
         (
             TypeKind::Any,
             vec![TypeCheckResult {
                 node: expr,
-                reason: "function or operator type mismatch".into(),
+                reason: format!(
+                    "function or operator type mismatch. expect {:?}, get {:?}",
+                    functions, args
+                ),
             }],
         )
     }
@@ -93,13 +96,13 @@ fn check_interface_function_calling<'a>(
     function_kind: FunctionKind,
     args: Vec<TypeKind>,
 ) -> (TypeKind, Vec<TypeCheckResult<'a>>) {
-    if interface_ty == TypeKind::Any {
+    if interface_ty.is_any() {
         return (TypeKind::Any, vec![]);
     }
     if function_kind == FunctionKind::BinaryOp(BinaryLiteral::Eq)
         || function_kind == FunctionKind::BinaryOp(BinaryLiteral::NotEq)
     {
-        if interface_ty == TypeKind::Null || args[0] == TypeKind::Null {
+        if interface_ty.is_null() || args[0].is_null() {
             return (TypeKind::Boolean, vec![]);
         }
     }
@@ -135,7 +138,7 @@ fn check_function<'a, 'b, 'c>(
     }
     let mut flow = flow.clone();
     for (arg, param) in zip(&function.arguments, params) {
-        flow.context.insert(&arg.id, *param);
+        flow.context.insert(&arg.id, param.clone());
     }
     let (return_ty, return_res) = check_expression(&function.return_expression, context, &flow);
     (return_ty, res.into_iter().chain(return_res).collect())
@@ -151,7 +154,24 @@ fn check_expression<'a, 'b>(
         ExpressionKind::Literal(Literal::Float(_)) => (TypeKind::Float, vec![]),
         ExpressionKind::Literal(Literal::Int(_)) => (TypeKind::Integer, vec![]),
         ExpressionKind::Literal(Literal::String(_)) => (TypeKind::String, vec![]),
-        ExpressionKind::Literal(Literal::List(_)) => (TypeKind::List, vec![]),
+        ExpressionKind::Literal(Literal::List(items)) => {
+            let item_ty = items
+                .iter()
+                .map(|item| check_expression(item, context, flow).0)
+                .reduce(|acc, item_ty| {
+                    if acc.equal_exactly(&item_ty) {
+                        if item_ty.is_any() {
+                            item_ty
+                        } else {
+                            acc
+                        }
+                    } else {
+                        TypeKind::Any
+                    }
+                })
+                .unwrap_or(TypeKind::Any);
+            (TypeKind::List(Box::new(item_ty)), vec![])
+        }
         ExpressionKind::Literal(Literal::Path(_)) => (TypeKind::Path, vec![]),
         ExpressionKind::Literal(Literal::Null) => (TypeKind::Null, vec![]),
         ExpressionKind::Variable(_) => match context
@@ -164,11 +184,11 @@ fn check_expression<'a, 'b>(
                 check_expression(&node.expression, context, flow)
             }
             Some(VariableNodeRef::FunctionArgument(arg)) => {
-                (*flow.context.get(&arg.id).unwrap(), vec![])
+                (flow.context.get(&arg.id).unwrap().clone(), vec![])
             }
             Some(VariableNodeRef::PathCapture(_)) => (TypeKind::String, vec![]),
             Some(VariableNodeRef::PathCaptureGroup(_)) => (TypeKind::String, vec![]),
-            Some(VariableNodeRef::GlobalVariable(type_kind)) => (*type_kind, vec![]),
+            Some(VariableNodeRef::GlobalVariable(type_kind)) => (type_kind.clone(), vec![]),
             None => panic!(
                 "{:?} not found in {:?}",
                 expr, context.bindings.variable_table
@@ -223,11 +243,7 @@ fn check_expression<'a, 'b>(
             let (false_ty, false_res) = check_expression(&false_expr, context, flow);
             let assert_res = assert_type(&true_ty, &false_ty, expr);
             (
-                if true_ty == TypeKind::Any {
-                    false_ty
-                } else {
-                    true_ty
-                },
+                if true_ty.is_any() { false_ty } else { true_ty },
                 cond_res
                     .into_iter()
                     .chain(true_res)
@@ -242,17 +258,17 @@ fn check_expression<'a, 'b>(
         }
         ExpressionKind::TypeCheckOperation(target_expr, type_str) => {
             let type_str_ty_candidates = match &**type_str {
-                "bool" => vec![&TypeKind::Boolean],
-                "int" => vec![&TypeKind::Integer],
-                "float" => vec![&TypeKind::Float],
-                "number" => vec![&TypeKind::Integer, &TypeKind::Float],
-                "string" => vec![&TypeKind::String],
-                "list" => vec![&TypeKind::List],
-                "map" => vec![&TypeKind::Map],
-                "timestamp" => vec![&TypeKind::Timestamp],
-                "duration" => vec![&TypeKind::Duration],
-                "path" => vec![&TypeKind::Path],
-                "latlng" => vec![&TypeKind::LatLng],
+                "bool" => vec![TypeKind::Boolean],
+                "int" => vec![TypeKind::Integer],
+                "float" => vec![TypeKind::Float],
+                "number" => vec![TypeKind::Integer, TypeKind::Float],
+                "string" => vec![TypeKind::String],
+                "list" => vec![TypeKind::List(Box::new(TypeKind::Any)).clone()],
+                "map" => vec![TypeKind::Map(Box::new(TypeKind::Any)).clone()],
+                "timestamp" => vec![TypeKind::Timestamp],
+                "duration" => vec![TypeKind::Duration],
+                "path" => vec![TypeKind::Path],
+                "latlng" => vec![TypeKind::LatLng],
                 _ => panic!(),
             };
             let (target_ty, mut res) = check_expression(&target_expr, context, flow);
@@ -270,7 +286,7 @@ fn check_expression<'a, 'b>(
             }
 
             let (obj_ty, mut res) = check_expression(&obj_expr, context, flow);
-            if obj_ty == TypeKind::Any {
+            if obj_ty.is_any() {
                 return (obj_ty, res);
             }
             match &member_expr.kind {
@@ -287,11 +303,11 @@ fn check_expression<'a, 'b>(
                                     .get(&MemberKind::Member(member_name.clone()))
                             })
                     {
-                        return (*member, res);
+                        return (member.clone(), res);
                     }
 
                     // check is map
-                    if obj_ty != TypeKind::Map {
+                    if !obj_ty.equal_to(&TypeKind::Map(Box::new(TypeKind::Any))) {
                         res.push(TypeCheckResult {
                             node: &**member_expr,
                             reason: "no map type don't have member".into(),
@@ -401,7 +417,7 @@ fn check_expression<'a, 'b>(
                         params_res.into_iter().chain(return_res).collect(),
                     )
                 }
-                None => panic!(),
+                None => (TypeKind::Any, vec![]),
             }
         }
     }

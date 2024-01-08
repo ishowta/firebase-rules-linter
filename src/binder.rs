@@ -1,6 +1,6 @@
 use crate::{
     ast::{
-        Ast, Expression, ExpressionKind, Function, MatchPathLiteral, NodeID, Rule, RuleGroup,
+        Ast, Expression, ExpressionKind, Function, MatchPathLiteral, Node, NodeID, Rule, RuleGroup,
         RulesTree, Service,
     },
     symbol::{Bindings, FunctionNodeRef, SymbolID, SymbolReferences, VariableNodeRef},
@@ -63,7 +63,7 @@ pub struct Definitions<'a> {
 
 #[derive(Clone, Debug)]
 pub struct BindLintResult<'a> {
-    pub node_id: &'a NodeID,
+    pub node: &'a dyn Node,
     pub kind: BindLintKind,
 }
 
@@ -132,7 +132,7 @@ fn bind_expression<'a, 'b>(
                 let _ = bindings.variable_table.insert(&expression.id, symbol);
             } else {
                 bind_lint_results.push(BindLintResult {
-                    node_id: &expression.id,
+                    node: expression,
                     kind: BindLintKind::VariableNotFound,
                 })
             }
@@ -231,7 +231,7 @@ fn bind_expression<'a, 'b>(
                 let _ = bindings.function_table.insert(&expression.id, symbol);
             } else {
                 bind_lint_results.push(BindLintResult {
-                    node_id: &expression.id,
+                    node: expression,
                     kind: BindLintKind::FunctionNotFound,
                 })
             }
