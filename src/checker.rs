@@ -6,6 +6,7 @@ use crate::{
         Ast, BinaryLiteral, Expression, ExpressionKind, Function, Literal, Node, NodeID, Rule,
         RuleGroup,
     },
+    interfaces::Interfaces,
     symbol::{Bindings, FunctionNodeRef, SymbolReferences, VariableNodeRef},
     ty::{FunctionKind, Interface, MemberKind, TypeKind},
 };
@@ -20,7 +21,7 @@ pub struct TypeCheckResult<'a> {
 pub struct TypeCheckContext<'a> {
     pub bindings: &'a Bindings<'a>,
     pub symbol_references: &'a SymbolReferences<'a>,
-    pub interfaces: &'a HashMap<TypeKind, Interface>,
+    pub interfaces: &'a Interfaces,
 }
 
 #[derive(Clone, Debug)]
@@ -33,13 +34,13 @@ fn assert_type<'a, 'b>(
     kind: &'b TypeKind,
     expr: &'a Expression,
 ) -> Option<TypeCheckResult<'a>> {
-    if ty != kind && *ty != TypeKind::Any && *kind != TypeKind::Any {
+    if ty.equal_to(kind) {
+        None
+    } else {
         Some(TypeCheckResult {
             node: expr,
-            reason: format!("Expected {:?}, Get {:?}", kind, ty).into(),
+            reason: format!("Expect {:?}, Get {:?}", kind, ty).into(),
         })
-    } else {
-        None
     }
 }
 
@@ -48,15 +49,15 @@ fn assert_type_candidates<'a, 'b>(
     kind_candidates: Vec<&'b TypeKind>,
     expr: &'a Expression,
 ) -> Option<TypeCheckResult<'a>> {
-    let passed = !kind_candidates.iter().all(|kind_candidate| {
-        ty != *kind_candidate && *ty != TypeKind::Any && **kind_candidate != TypeKind::Any
-    });
+    let passed = kind_candidates
+        .iter()
+        .any(|kind_candidate| ty.equal_to(*kind_candidate));
     if passed {
         None
     } else {
         Some(TypeCheckResult {
             node: expr,
-            reason: format!("Expected {:?}, Get {:?}", kind_candidates, ty).into(),
+            reason: format!("Expect {:?}, Get {:?}", kind_candidates, ty).into(),
         })
     }
 }
@@ -67,9 +68,7 @@ fn check_function_args<'a>(
     args: Vec<TypeKind>,
 ) -> (TypeKind, Vec<TypeCheckResult<'a>>) {
     if let Some(return_ty) = functions.iter().find_map(|(params, return_ty)| {
-        if zip(&args, params)
-            .all(|(arg, param)| arg == param || *arg == TypeKind::Any || *param == TypeKind::Any)
-        {
+        if zip(&args, params).all(|(arg, param)| arg.equal_to(param)) {
             Some(return_ty)
         } else {
             None
@@ -104,27 +103,15 @@ fn check_interface_function_calling<'a>(
             return (TypeKind::Boolean, vec![]);
         }
     }
-    if let Some(functions) = context
+    let functions: Vec<(Vec<TypeKind>, TypeKind)> = context
         .interfaces
-        .get(&interface_ty)
-        .unwrap()
-        .functions
-        .get(&function_kind)
-    {
-        check_function_args(node, functions, args)
-    } else {
-        (
-            TypeKind::Any,
-            vec![TypeCheckResult {
-                node: node,
-                reason: format!(
-                    "function or operator not found. {:?} with {:?}",
-                    interface_ty, function_kind
-                )
-                .into(),
-            }],
-        )
-    }
+        .get_interface(&interface_ty)
+        .iter()
+        .flat_map(|interface| interface.functions.get(&function_kind))
+        .cloned()
+        .flatten()
+        .collect();
+    check_function_args(node, &functions, args)
 }
 
 fn check_function<'a, 'b, 'c>(
@@ -139,7 +126,7 @@ fn check_function<'a, 'b, 'c>(
         res.push(TypeCheckResult {
             node: caller,
             reason: format!(
-                "params length not matched. expected {} but get {}",
+                "params length not matched. expect {} but get {}",
                 function.arguments.len(),
                 params.len()
             )
@@ -289,11 +276,17 @@ fn check_expression<'a, 'b>(
             match &member_expr.kind {
                 ExpressionKind::Variable(member_name) => {
                     // check is interface member
-                    if let Some(member) = context.interfaces.get(&obj_ty).and_then(|interface| {
-                        interface
-                            .members
-                            .get(&MemberKind::Member(member_name.clone()))
-                    }) {
+                    if let Some(member) =
+                        context
+                            .interfaces
+                            .get_interface(&obj_ty)
+                            .iter()
+                            .find_map(|interface| {
+                                interface
+                                    .members
+                                    .get(&MemberKind::Member(member_name.clone()))
+                            })
+                    {
                         return (*member, res);
                     }
 
@@ -308,42 +301,40 @@ fn check_expression<'a, 'b>(
                 }
                 ExpressionKind::FunctionCallExpression(fn_name, fn_params_expr) => {
                     // check is interface function
-                    if let Some(function_candidates) =
-                        context.interfaces.get(&obj_ty).and_then(|interface| {
+                    let function_candidates: Vec<(Vec<TypeKind>, TypeKind)> = context
+                        .interfaces
+                        .get_interface(&obj_ty)
+                        .iter()
+                        .flat_map(|interface| {
                             interface
                                 .functions
                                 .get(&FunctionKind::Function(fn_name.clone()))
                         })
-                    {
-                        let (params_ty, params_res) = fn_params_expr
-                            .iter()
-                            .map(|param_expr| check_expression(param_expr, context, flow))
-                            .fold::<(Vec<TypeKind>, Vec<TypeCheckResult>), _>(
-                                (vec![], vec![]),
-                                |(mut acc_ty_list, acc_res_list), (param_ty, param_res)| {
-                                    acc_ty_list.push(param_ty);
-                                    (
-                                        acc_ty_list,
-                                        acc_res_list.into_iter().chain(param_res).collect(),
-                                    )
-                                },
-                            );
-                        let (return_ty, return_res) =
-                            check_function_args(expr, function_candidates, params_ty);
-                        return (
-                            return_ty,
-                            res.into_iter()
-                                .chain(params_res)
-                                .chain(return_res)
-                                .collect(),
+                        .cloned()
+                        .flatten()
+                        .collect();
+                    let (params_ty, params_res) = fn_params_expr
+                        .iter()
+                        .map(|param_expr| check_expression(param_expr, context, flow))
+                        .fold::<(Vec<TypeKind>, Vec<TypeCheckResult>), _>(
+                            (vec![], vec![]),
+                            |(mut acc_ty_list, acc_res_list), (param_ty, param_res)| {
+                                acc_ty_list.push(param_ty);
+                                (
+                                    acc_ty_list,
+                                    acc_res_list.into_iter().chain(param_res).collect(),
+                                )
+                            },
                         );
-                    } else {
-                        res.push(TypeCheckResult {
-                            node: &**member_expr,
-                            reason: format!("{} not found", fn_name).into(),
-                        });
-                        return (TypeKind::Any, res);
-                    }
+                    let (return_ty, return_res) =
+                        check_function_args(expr, &function_candidates, params_ty);
+                    return (
+                        return_ty,
+                        res.into_iter()
+                            .chain(params_res)
+                            .chain(return_res)
+                            .collect(),
+                    );
                 }
                 _ => {
                     res.push(TypeCheckResult {

@@ -23,6 +23,28 @@ pub enum TypeKind {
     Resource,
 }
 
+impl TypeKind {
+    pub fn get_coercion_list(&self) -> Vec<TypeKind> {
+        match *self {
+            TypeKind::Integer => vec![TypeKind::Float],
+            _ => vec![],
+        }
+    }
+
+    pub fn is_type_coercion_to(&self, target: &Self) -> bool {
+        self.get_coercion_list()
+            .iter()
+            .any(|candidate| candidate == target)
+    }
+
+    pub fn equal_to(&self, dst: &Self) -> bool {
+        *self == *dst
+            || self.is_type_coercion_to(dst)
+            || *self == TypeKind::Any
+            || *dst == TypeKind::Any
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FunctionKind {
     Function(String),

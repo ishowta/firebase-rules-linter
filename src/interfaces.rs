@@ -5,7 +5,21 @@ use crate::{
     ty::{FunctionKind, Interface, MemberKind, TypeKind},
 };
 
-pub fn get_interfaces<'a>() -> HashMap<TypeKind, Interface> {
+#[derive(Debug, Clone)]
+pub struct Interfaces {
+    interfaces: HashMap<TypeKind, Interface>,
+}
+
+impl Interfaces {
+    pub fn get_interface<'a>(&'a self, ty: &'a TypeKind) -> Vec<&Interface> {
+        std::iter::once(ty)
+            .chain(ty.get_coercion_list().iter())
+            .flat_map(|ty| self.interfaces.get(&ty))
+            .collect()
+    }
+}
+
+pub fn get_interfaces<'a>() -> Interfaces {
     let any_interface = Interface {
         functions: HashMap::from([]),
         members: HashMap::from([]),
@@ -534,23 +548,25 @@ pub fn get_interfaces<'a>() -> HashMap<TypeKind, Interface> {
         ]),
     };
 
-    HashMap::from([
-        (TypeKind::Any, any_interface),
-        (TypeKind::Null, null_interface),
-        (TypeKind::Boolean, boolean_interface),
-        (TypeKind::Bytes, bytes_interface),
-        (TypeKind::Duration, duration_interface),
-        (TypeKind::Float, float_interface),
-        (TypeKind::Integer, integer_interface),
-        (TypeKind::LatLng, latlng_interface),
-        (TypeKind::List, list_interface),
-        (TypeKind::Map, map_interface),
-        (TypeKind::MapDiff, mapdiff_interface),
-        (TypeKind::Path, path_interface),
-        (TypeKind::Set, set_interface),
-        (TypeKind::String, string_interface),
-        (TypeKind::Timestamp, timestamp_interface),
-        (TypeKind::Request, request_interface),
-        (TypeKind::Resource, resource_interface),
-    ])
+    Interfaces {
+        interfaces: HashMap::from([
+            (TypeKind::Any, any_interface),
+            (TypeKind::Null, null_interface),
+            (TypeKind::Boolean, boolean_interface),
+            (TypeKind::Bytes, bytes_interface),
+            (TypeKind::Duration, duration_interface),
+            (TypeKind::Float, float_interface),
+            (TypeKind::Integer, integer_interface),
+            (TypeKind::LatLng, latlng_interface),
+            (TypeKind::List, list_interface),
+            (TypeKind::Map, map_interface),
+            (TypeKind::MapDiff, mapdiff_interface),
+            (TypeKind::Path, path_interface),
+            (TypeKind::Set, set_interface),
+            (TypeKind::String, string_interface),
+            (TypeKind::Timestamp, timestamp_interface),
+            (TypeKind::Request, request_interface),
+            (TypeKind::Resource, resource_interface),
+        ]),
+    }
 }
