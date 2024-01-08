@@ -1,3 +1,4 @@
+use miette::{Diagnostic, Report};
 use std::fs;
 
 use crate::{
@@ -38,25 +39,13 @@ fn main() {
 
     let type_check_result = check(&ast, &type_check_context);
 
-    println!("\n\n");
+    let results: Vec<Report> = bind_lint_result
+        .iter()
+        .map(|x| Report::from(x.clone()))
+        .chain(type_check_result.iter().map(|x| Report::from(x.clone())))
+        .collect();
 
-    for result in bind_lint_result {
-        let range = result.node.get_span().0;
-        println!(
-            "{:?} - \x1b[31merror\x1b[m {:?}\n\n{}\n\n",
-            result.node.get_span(),
-            result.kind,
-            &code[range.start_byte..range.end_byte],
-        );
-    }
-
-    for result in type_check_result {
-        let range = result.node.get_span().0;
-        println!(
-            "{:?} - error {:?}\n\n{}\n\n",
-            result.node.get_span(),
-            result.reason,
-            &code[range.start_byte..range.end_byte],
-        );
+    for result in results {
+        println!("{:?}", result.with_source_code(code.clone()));
     }
 }

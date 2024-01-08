@@ -4,7 +4,7 @@
 
 - [x] Typing function parameter
 - [ ] map literal
-- [ ] Generic Type (List[T], Map[T], Set[T])
+- [x] Generic Type (List[T], Map[T], Set[T])
 - [ ] Generic Parameter
 - [x] Type coercion (integer -> float)
 - [ ] Union Types (integer | float, List[string | number])

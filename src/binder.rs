@@ -1,6 +1,9 @@
+use miette::{Diagnostic, SourceSpan};
+use thiserror::Error;
+
 use crate::{
     ast::{
-        Ast, Expression, ExpressionKind, Function, MatchPathLiteral, Node, NodeID, Rule, RuleGroup,
+        Ast, Expression, ExpressionKind, Function, MatchPathLiteral, Node, Rule, RuleGroup,
         RulesTree, Service,
     },
     symbol::{Bindings, FunctionNodeRef, SymbolID, SymbolReferences, VariableNodeRef},
@@ -61,10 +64,23 @@ pub struct Definitions<'a> {
     pub namespaces: HashMap<&'a str, HashMap<&'a str, (SymbolID, FunctionNodeRef<'a>)>>,
 }
 
-#[derive(Clone, Debug)]
-pub struct BindLintResult<'a> {
-    pub node: &'a dyn Node,
+#[derive(Clone, Debug, Error, Diagnostic)]
+#[error("{kind:?}")]
+#[diagnostic()]
+pub struct BindLintResult {
     pub kind: BindLintKind,
+    #[label]
+    pub at: SourceSpan,
+}
+
+impl BindLintResult {
+    pub fn new(node: &dyn Node, kind: BindLintKind) -> Self {
+        let range = node.get_span().0;
+        BindLintResult {
+            kind: kind,
+            at: (range.start_byte..range.end_byte).into(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -123,7 +139,7 @@ fn bind_expression<'a, 'b>(
     expression: &'a Expression,
     scopes_definitions: &'b mut Vec<Definitions<'a>>,
     bindings: &'b mut Bindings<'a>,
-    bind_lint_results: &'b mut Vec<BindLintResult<'a>>,
+    bind_lint_results: &'b mut Vec<BindLintResult>,
 ) {
     match &expression.kind {
         ExpressionKind::Literal(_) => (),
@@ -131,10 +147,10 @@ fn bind_expression<'a, 'b>(
             if let Some(symbol) = search_variable_symbol(&variable, scopes_definitions) {
                 let _ = bindings.variable_table.insert(&expression.id, symbol);
             } else {
-                bind_lint_results.push(BindLintResult {
-                    node: expression,
-                    kind: BindLintKind::VariableNotFound,
-                })
+                bind_lint_results.push(BindLintResult::new(
+                    expression,
+                    BindLintKind::VariableNotFound,
+                ))
             }
         }
         ExpressionKind::UnaryOperation(_, expression) => {
@@ -230,10 +246,10 @@ fn bind_expression<'a, 'b>(
             if let Some(symbol) = search_function_symbol(&name, scopes_definitions) {
                 let _ = bindings.function_table.insert(&expression.id, symbol);
             } else {
-                bind_lint_results.push(BindLintResult {
-                    node: expression,
-                    kind: BindLintKind::FunctionNotFound,
-                })
+                bind_lint_results.push(BindLintResult::new(
+                    expression,
+                    BindLintKind::FunctionNotFound,
+                ))
             }
             for param_expression in params_expression.iter() {
                 bind_expression(
@@ -251,7 +267,7 @@ fn bind_function<'a, 'b>(
     function: &'a Function,
     scopes_definitions: &'b mut Vec<Definitions<'a>>,
     bindings: &'b mut Bindings<'a>,
-    bind_lint_results: &'b mut Vec<BindLintResult<'a>>,
+    bind_lint_results: &'b mut Vec<BindLintResult>,
 ) {
     scopes_definitions.last_mut().unwrap().functions.insert(
         &function.name,
@@ -301,7 +317,7 @@ fn bind_rule<'a, 'b>(
     rule: &'a Rule,
     scopes_definitions: &'b mut Vec<Definitions<'a>>,
     bindings: &'b mut Bindings<'a>,
-    bind_lint_results: &'b mut Vec<BindLintResult<'a>>,
+    bind_lint_results: &'b mut Vec<BindLintResult>,
 ) {
     bind_expression(
         &rule.condition,
@@ -315,7 +331,7 @@ fn bind_rule_group<'a, 'b>(
     rule_group: &'a RuleGroup,
     scopes_definitions: &'b mut Vec<Definitions<'a>>,
     bindings: &'b mut Bindings<'a>,
-    bind_lint_results: &'b mut Vec<BindLintResult<'a>>,
+    bind_lint_results: &'b mut Vec<BindLintResult>,
 ) {
     scopes_definitions.push(Definitions {
         variables: rule_group
@@ -360,7 +376,7 @@ fn bind_service<'a, 'b>(
     service: &'a Service,
     scopes_definitions: &'b mut Vec<Definitions<'a>>,
     bindings: &'b mut Bindings<'a>,
-    bind_lint_results: &'b mut Vec<BindLintResult<'a>>,
+    bind_lint_results: &'b mut Vec<BindLintResult>,
 ) {
     scopes_definitions.push(Definitions {
         variables: HashMap::new(),
@@ -392,7 +408,7 @@ fn bind_rules_tree<'a, 'b>(
     rules_tree: &'a RulesTree,
     scopes_definitions: &'b mut Vec<Definitions<'a>>,
     bindings: &'b mut Bindings<'a>,
-    bind_lint_results: &'b mut Vec<BindLintResult<'a>>,
+    bind_lint_results: &'b mut Vec<BindLintResult>,
 ) {
     for service in rules_tree.services.iter() {
         bind_service(service, scopes_definitions, bindings, bind_lint_results);
@@ -406,7 +422,7 @@ pub fn bind<'a>(
         HashMap<&'static str, Vec<FunctionInterface>>,
         HashMap<&'static str, HashMap<&'static str, Vec<FunctionInterface>>>,
     ),
-) -> (Bindings<'a>, SymbolReferences<'a>, Vec<BindLintResult<'a>>) {
+) -> (Bindings<'a>, SymbolReferences<'a>, Vec<BindLintResult>) {
     let mut bindings = Bindings {
         variable_table: HashMap::new(),
         function_table: HashMap::new(),

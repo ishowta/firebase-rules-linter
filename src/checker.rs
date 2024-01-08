@@ -1,6 +1,9 @@
 use core::panic;
 use std::{collections::HashMap, iter::zip};
 
+use miette::{Diagnostic, SourceSpan};
+use thiserror::Error;
+
 use crate::{
     ast::{
         Ast, BinaryLiteral, Expression, ExpressionKind, Function, Literal, Node, NodeID, Rule,
@@ -11,10 +14,23 @@ use crate::{
     ty::{FunctionKind, MemberKind, TypeKind},
 };
 
-#[derive(Clone, Debug)]
-pub struct TypeCheckResult<'a> {
-    pub node: &'a dyn Node,
+#[derive(Clone, Debug, Error, Diagnostic)]
+#[error("{reason}")]
+#[diagnostic()]
+pub struct TypeCheckResult {
     pub reason: String,
+    #[label]
+    pub at: SourceSpan,
+}
+
+impl TypeCheckResult {
+    pub fn new(node: &dyn Node, reason: String) -> Self {
+        let range = node.get_span().0;
+        TypeCheckResult {
+            reason: reason,
+            at: (range.start_byte..range.end_byte).into(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -33,14 +49,14 @@ fn assert_type<'a, 'b>(
     ty: &'b TypeKind,
     kind: &'b TypeKind,
     expr: &'a Expression,
-) -> Option<TypeCheckResult<'a>> {
+) -> Option<TypeCheckResult> {
     if ty.equal_to(kind) {
         None
     } else {
-        Some(TypeCheckResult {
-            node: expr,
-            reason: format!("Expect {:?}, Get {:?}", kind, ty).into(),
-        })
+        Some(TypeCheckResult::new(
+            expr,
+            format!("Expect {:?}, Get {:?}", kind, ty).into(),
+        ))
     }
 }
 
@@ -48,17 +64,17 @@ fn assert_type_candidates<'a, 'b>(
     ty: &'b TypeKind,
     kind_candidates: Vec<TypeKind>,
     expr: &'a Expression,
-) -> Option<TypeCheckResult<'a>> {
+) -> Option<TypeCheckResult> {
     let passed = kind_candidates
         .iter()
         .any(|kind_candidate| ty.equal_to(kind_candidate));
     if passed {
         None
     } else {
-        Some(TypeCheckResult {
-            node: expr,
-            reason: format!("Expect {:?}, Get {:?}", kind_candidates, ty).into(),
-        })
+        Some(TypeCheckResult::new(
+            expr,
+            format!("Expect {:?}, Get {:?}", kind_candidates, ty).into(),
+        ))
     }
 }
 
@@ -66,7 +82,7 @@ fn check_function_args<'a>(
     expr: &'a dyn Node,
     functions: &Vec<(Vec<TypeKind>, TypeKind)>,
     args: Vec<TypeKind>,
-) -> (TypeKind, Vec<TypeCheckResult<'a>>) {
+) -> (TypeKind, Vec<TypeCheckResult>) {
     if let Some(return_ty) = functions.iter().find_map(|(params, return_ty)| {
         if zip(&args, params).all(|(arg, param)| arg.equal_to(param)) {
             Some(return_ty)
@@ -78,13 +94,18 @@ fn check_function_args<'a>(
     } else {
         (
             TypeKind::Any,
-            vec![TypeCheckResult {
-                node: expr,
-                reason: format!(
+            vec![TypeCheckResult::new(
+                expr,
+                format!(
                     "function or operator type mismatch. expect {:?}, get {:?}",
-                    functions, args
+                    functions
+                        .iter()
+                        .map(|x| format!("{:?}", x.0))
+                        .collect::<Vec<String>>()
+                        .join(" or "),
+                    args
                 ),
-            }],
+            )],
         )
     }
 }
@@ -95,7 +116,7 @@ fn check_interface_function_calling<'a>(
     interface_ty: TypeKind,
     function_kind: FunctionKind,
     args: Vec<TypeKind>,
-) -> (TypeKind, Vec<TypeCheckResult<'a>>) {
+) -> (TypeKind, Vec<TypeCheckResult>) {
     if interface_ty.is_any() {
         return (TypeKind::Any, vec![]);
     }
@@ -123,18 +144,18 @@ fn check_function<'a, 'b, 'c>(
     params: &'b Vec<TypeKind>,
     context: &'a TypeCheckContext<'a>,
     flow: &'c Flow,
-) -> (TypeKind, Vec<TypeCheckResult<'a>>) {
-    let mut res: Vec<TypeCheckResult<'a>> = vec![];
+) -> (TypeKind, Vec<TypeCheckResult>) {
+    let mut res: Vec<TypeCheckResult> = vec![];
     if function.arguments.len() != params.len() {
-        res.push(TypeCheckResult {
-            node: caller,
-            reason: format!(
+        res.push(TypeCheckResult::new(
+            caller,
+            format!(
                 "params length not matched. expect {} but get {}",
                 function.arguments.len(),
                 params.len()
             )
             .into(),
-        })
+        ))
     }
     let mut flow = flow.clone();
     for (arg, param) in zip(&function.arguments, params) {
@@ -148,7 +169,7 @@ fn check_expression<'a, 'b>(
     expr: &'a Expression,
     context: &'a TypeCheckContext<'a>,
     flow: &'b Flow,
-) -> (TypeKind, Vec<TypeCheckResult<'a>>) {
+) -> (TypeKind, Vec<TypeCheckResult>) {
     match &expr.kind {
         ExpressionKind::Literal(Literal::Bool(_)) => (TypeKind::Boolean, vec![]),
         ExpressionKind::Literal(Literal::Float(_)) => (TypeKind::Float, vec![]),
@@ -308,10 +329,10 @@ fn check_expression<'a, 'b>(
 
                     // check is map
                     if !obj_ty.equal_to(&TypeKind::Map(Box::new(TypeKind::Any))) {
-                        res.push(TypeCheckResult {
-                            node: &**member_expr,
-                            reason: "no map type don't have member".into(),
-                        })
+                        res.push(TypeCheckResult::new(
+                            &**member_expr,
+                            "no map type don't have member".into(),
+                        ))
                     }
                     return (TypeKind::Any, res);
                 }
@@ -353,10 +374,10 @@ fn check_expression<'a, 'b>(
                     );
                 }
                 _ => {
-                    res.push(TypeCheckResult {
-                        node: &**member_expr,
-                        reason: "map member must identifier".into(),
-                    });
+                    res.push(TypeCheckResult::new(
+                        &**member_expr,
+                        "map member must identifier".into(),
+                    ));
                     return (TypeKind::Any, res);
                 }
             };
@@ -427,7 +448,7 @@ fn check_rule<'a, 'b>(
     rule: &'a Rule,
     context: &'a TypeCheckContext<'a>,
     flow: &'b Flow,
-) -> Vec<TypeCheckResult<'a>> {
+) -> Vec<TypeCheckResult> {
     let (ty, mut result) = check_expression(&rule.condition, context, flow);
     if let Some(res) = assert_type(&ty, &TypeKind::Boolean, &rule.condition) {
         result.push(res)
@@ -439,7 +460,7 @@ fn check_rule_group<'a, 'b>(
     rule_group: &'a RuleGroup,
     context: &'a TypeCheckContext<'a>,
     flow: &'b Flow,
-) -> Vec<TypeCheckResult<'a>> {
+) -> Vec<TypeCheckResult> {
     rule_group
         .rules
         .iter()
@@ -455,7 +476,7 @@ fn check_rule_group<'a, 'b>(
         .collect()
 }
 
-pub fn check<'a>(ast: &'a Ast, context: &'a TypeCheckContext<'a>) -> Vec<TypeCheckResult<'a>> {
+pub fn check<'a>(ast: &'a Ast, context: &'a TypeCheckContext<'a>) -> Vec<TypeCheckResult> {
     let flow = Flow {
         context: HashMap::new(),
     };

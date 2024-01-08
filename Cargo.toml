@@ -9,6 +9,8 @@ edition = "2021"
 tree-sitter-rules = { path = "../tree-sitter-firebase-rules" }
 tree-sitter = "0.20.10"
 nanoid = "0.4.0"
+miette = { version = "5.10.0", features = ["fancy"] }
+thiserror = "1.0.56"
 
 [build-dependencies]
 cc = "*"
