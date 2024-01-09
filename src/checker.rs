@@ -135,7 +135,20 @@ fn check_interface_function_calling<'a>(
         .cloned()
         .flatten()
         .collect();
-    check_function_args(node, function_kind.to_string(), &functions, args)
+    if functions.len() == 0 {
+        (
+            TypeKind::Any,
+            vec![TypeCheckResult::new(
+                node,
+                format!(
+                    "function {} not found for the type `{:?}`",
+                    function_kind, interface_ty
+                ),
+            )],
+        )
+    } else {
+        check_function_args(node, function_kind.to_string(), &functions, args)
+    }
 }
 
 fn check_function<'a, 'b, 'c>(
@@ -347,6 +360,18 @@ fn check_expression<'a, 'b>(
                         .cloned()
                         .flatten()
                         .collect();
+                    if function_candidates.len() == 0 {
+                        return (
+                            TypeKind::Any,
+                            vec![TypeCheckResult::new(
+                                expr,
+                                format!(
+                                    "function `{}()` not found for the type `{:?}`",
+                                    fn_name, obj_ty
+                                ),
+                            )],
+                        );
+                    }
                     let (params_ty, params_res) = fn_params_expr
                         .iter()
                         .map(|param_expr| check_expression(param_expr, context, flow))
