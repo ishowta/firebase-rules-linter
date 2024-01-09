@@ -24,10 +24,9 @@ pub struct TypeCheckResult {
 
 impl TypeCheckResult {
     pub fn new(node: &dyn Node, reason: String) -> Self {
-        let range = node.get_span().0;
         TypeCheckResult {
             reason: reason,
-            at: (range.start_byte..range.end_byte).into(),
+            at: node.get_span().into(),
         }
     }
 }
