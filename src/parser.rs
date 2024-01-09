@@ -54,6 +54,16 @@ fn parse_literal(_node: &Node, context: &Context) -> Literal {
                 .map(|node| parse_expression(&node, context))
                 .collect(),
         ),
+        "map" => Literal::Map(
+            node.children_by_field_name("entry", &mut node.walk())
+                .map(|node| {
+                    (
+                        get_text(&node.child_by_field_name("key").unwrap(), context).into(),
+                        parse_expression(&node.child_by_field_name("value").unwrap(), context),
+                    )
+                })
+                .collect(),
+        ),
         "path" => Literal::Path(
             node.children(&mut node.walk())
                 .map(|node| match node.kind() {

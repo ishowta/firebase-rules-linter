@@ -251,7 +251,7 @@ pub fn get_interfaces() -> Interfaces {
             ),
             (
                 FunctionKind::Subscript,
-                vec![(vec![TypeKind::Integer], TypeKind::Any)],
+                vec![(vec![TypeKind::Integer], ty.clone())],
             ),
             (
                 FunctionKind::SubscriptRange,
@@ -329,7 +329,7 @@ pub fn get_interfaces() -> Interfaces {
             ),
             (
                 FunctionKind::Subscript,
-                vec![(vec![TypeKind::Integer], TypeKind::Map(Box::new(ty.clone())))],
+                vec![(vec![TypeKind::String], ty.clone())],
             ),
             (
                 FunctionKind::SubscriptRange,
@@ -349,8 +349,11 @@ pub fn get_interfaces() -> Interfaces {
             (
                 FunctionKind::Function("get".to_owned()),
                 vec![
-                    (vec![TypeKind::String], TypeKind::Any),
-                    (vec![TypeKind::List(Box::new(ty.clone()))], TypeKind::Any),
+                    (vec![TypeKind::String, ty.clone()], TypeKind::Any),
+                    (
+                        vec![TypeKind::List(Box::new(ty.clone())), ty.clone()],
+                        TypeKind::Any,
+                    ),
                 ],
             ),
             (

@@ -206,6 +206,24 @@ fn check_expression<'a, 'b>(
                 .unwrap_or(TypeKind::Any);
             (TypeKind::List(Box::new(item_ty)), vec![])
         }
+        ExpressionKind::Literal(Literal::Map(entries)) => {
+            let entry_ty = entries
+                .iter()
+                .map(|(_key, value)| check_expression(value, context, flow).0)
+                .reduce(|acc, entry_ty| {
+                    if acc.equal_exactly(&entry_ty) {
+                        if entry_ty.is_any() {
+                            entry_ty
+                        } else {
+                            acc
+                        }
+                    } else {
+                        TypeKind::Any
+                    }
+                })
+                .unwrap_or(TypeKind::Any);
+            (TypeKind::Map(Box::new(entry_ty)), vec![])
+        }
         ExpressionKind::Literal(Literal::Path(_)) => (TypeKind::Path, vec![]),
         ExpressionKind::Literal(Literal::Null) => (TypeKind::Null, vec![]),
         ExpressionKind::Variable(_) => match context

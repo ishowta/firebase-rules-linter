@@ -3,14 +3,12 @@
 ## Type System
 
 - [x] Typing function parameter
-- [ ] map literal
 - [x] Generic Type (List[T], Map[T], Set[T])
-- [ ] Generic Parameter
 - [x] Type coercion (integer -> float)
-- [ ] Union Types (integer | float, List[string | number])
-- [ ] Literal Types (string literal, boolean literal, number literal)
-- [ ] Structual subtyping
+- [x] map literal
+- [ ] Literal Types (map literal, string literal, boolean literal, number literal)
 - [ ] Flow typing (especially `is` typing on demand)
+- [ ] Generic Parameter
 
 ## Linter
 

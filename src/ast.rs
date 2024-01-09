@@ -167,6 +167,7 @@ pub enum Literal {
     Float(f64),
     String(String),
     List(Vec<Expression>),
+    Map(Vec<(String, Expression)>),
     Path(Vec<PathLiteral>),
 }
 
