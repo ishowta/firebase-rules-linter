@@ -1,4 +1,4 @@
-use miette::{Diagnostic, Report};
+use miette::Report;
 use std::fs;
 
 use crate::{
@@ -40,8 +40,7 @@ fn main() {
     let type_check_result = check(&ast, &type_check_context);
 
     let results: Vec<Report> = bind_lint_result
-        .iter()
-        .map(|x| Report::from(x.clone()))
+        .into_iter()
         .chain(type_check_result.iter().map(|x| Report::from(x.clone())))
         .collect();
 

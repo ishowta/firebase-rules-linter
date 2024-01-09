@@ -1,4 +1,3 @@
-use core::panic;
 use std::{collections::HashMap, iter::zip};
 
 use miette::{Diagnostic, SourceSpan};
@@ -212,10 +211,7 @@ fn check_expression<'a, 'b>(
             Some(VariableNodeRef::PathCapture(_)) => (TypeKind::String, vec![]),
             Some(VariableNodeRef::PathCaptureGroup(_)) => (TypeKind::String, vec![]),
             Some(VariableNodeRef::GlobalVariable(type_kind)) => (type_kind.clone(), vec![]),
-            None => panic!(
-                "{:?} not found in {:?}",
-                expr, context.bindings.variable_table
-            ),
+            None => (TypeKind::Any, vec![]),
         },
         ExpressionKind::UnaryOperation(literal, op_expr) => {
             let (op_ty, op_res) = check_expression(&op_expr, context, flow);
@@ -292,7 +288,7 @@ fn check_expression<'a, 'b>(
                 "duration" => vec![TypeKind::Duration],
                 "path" => vec![TypeKind::Path],
                 "latlng" => vec![TypeKind::LatLng],
-                _ => panic!(),
+                _ => vec![TypeKind::Any],
             };
             let (target_ty, mut res) = check_expression(&target_expr, context, flow);
             if let Some(res_assert) =
@@ -413,7 +409,7 @@ fn check_expression<'a, 'b>(
                 .map(|param_expr| (param_expr, check_expression(param_expr, context, flow)))
                 .fold::<(Vec<TypeKind>, Vec<TypeCheckResult>), _>(
                     (vec![], vec![]),
-                    |(mut acc_ty_list, acc_res_list), (param_expr, (param_ty, param_res))| {
+                    |(mut acc_ty_list, acc_res_list), (_param_expr, (param_ty, param_res))| {
                         acc_ty_list.push(param_ty);
                         (
                             acc_ty_list,

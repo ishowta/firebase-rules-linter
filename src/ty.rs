@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    fmt::{write, Display},
-};
-
-use miette::NamedSource;
+use std::{collections::HashMap, fmt::Display};
 
 use crate::ast::{BinaryLiteral, UnaryLiteral};
 

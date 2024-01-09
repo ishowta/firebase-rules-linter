@@ -1,5 +1,6 @@
-use std::fmt::{write, Display};
+use std::fmt::Display;
 
+use miette::SourceSpan;
 use nanoid::nanoid;
 use tree_sitter::Range;
 
@@ -31,6 +32,12 @@ impl std::fmt::Debug for Span {
                 &self.0.end_point.column + 1
             ))
             .finish()
+    }
+}
+
+impl Into<SourceSpan> for &Span {
+    fn into(self) -> SourceSpan {
+        (self.0.start_byte..self.0.end_byte).into()
     }
 }
 

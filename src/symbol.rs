@@ -1,7 +1,7 @@
 use nanoid::nanoid;
 
 use crate::{
-    ast::{Argument, Function, LetBinding, NodeID, PathCapture, PathCaptureGroup},
+    ast::{Argument, Function, LetBinding, Node, NodeID, PathCapture, PathCaptureGroup},
     ty::{FunctionInterface, TypeKind},
 };
 use std::collections::HashMap;
@@ -15,10 +15,31 @@ pub enum VariableNodeRef<'a> {
     GlobalVariable(&'a TypeKind),
 }
 
+impl<'a> VariableNodeRef<'a> {
+    pub fn get_node(&'a self) -> Option<&'a dyn Node> {
+        match self {
+            VariableNodeRef::LetBinding(node) => Some(*node),
+            VariableNodeRef::FunctionArgument(node) => Some(*node),
+            VariableNodeRef::PathCapture(node) => Some(*node),
+            VariableNodeRef::PathCaptureGroup(node) => Some(*node),
+            VariableNodeRef::GlobalVariable(_) => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum FunctionNodeRef<'a> {
     Function(&'a Function),
     GlobalFunction(&'a Vec<FunctionInterface>),
+}
+
+impl<'a> FunctionNodeRef<'a> {
+    pub fn get_node(&'a self) -> Option<&'a dyn Node> {
+        match self {
+            FunctionNodeRef::Function(node) => Some(*node),
+            FunctionNodeRef::GlobalFunction(_) => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
