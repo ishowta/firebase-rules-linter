@@ -1,3 +1,5 @@
+use std::fmt::{write, Display};
+
 use nanoid::nanoid;
 use tree_sitter::Range;
 
@@ -175,6 +177,17 @@ pub enum UnaryLiteral {
     Minus,
 }
 
+impl Display for UnaryLiteral {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnaryLiteral::Not => write!(f, "!"),
+            UnaryLiteral::Tilde => write!(f, "~"),
+            UnaryLiteral::Plus => write!(f, "+"),
+            UnaryLiteral::Minus => write!(f, "-"),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BinaryLiteral {
     LogicalAnd,
@@ -194,6 +207,30 @@ pub enum BinaryLiteral {
     Eq,
     NotEq,
     In,
+}
+
+impl Display for BinaryLiteral {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BinaryLiteral::LogicalAnd => write!(f, "&&"),
+            BinaryLiteral::LogicalOr => write!(f, "||"),
+            BinaryLiteral::BitwiseAnd => write!(f, "&"),
+            BinaryLiteral::BitwiseOr => write!(f, "|"),
+            BinaryLiteral::BitwiseXor => write!(f, "^"),
+            BinaryLiteral::Add => write!(f, "+"),
+            BinaryLiteral::Sub => write!(f, "-"),
+            BinaryLiteral::Mul => write!(f, "x"),
+            BinaryLiteral::Div => write!(f, "/"),
+            BinaryLiteral::Mod => write!(f, "%"),
+            BinaryLiteral::Gt => write!(f, ">"),
+            BinaryLiteral::Gte => write!(f, ">="),
+            BinaryLiteral::Lt => write!(f, "<"),
+            BinaryLiteral::Lte => write!(f, "<="),
+            BinaryLiteral::Eq => write!(f, "=="),
+            BinaryLiteral::NotEq => write!(f, "!="),
+            BinaryLiteral::In => write!(f, "in"),
+        }
+    }
 }
 
 pub trait Node {

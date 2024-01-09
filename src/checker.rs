@@ -80,6 +80,7 @@ fn assert_type_candidates<'a, 'b>(
 
 fn check_function_args<'a>(
     expr: &'a dyn Node,
+    name: String,
     functions: &Vec<(Vec<TypeKind>, TypeKind)>,
     args: Vec<TypeKind>,
 ) -> (TypeKind, Vec<TypeCheckResult>) {
@@ -97,7 +98,8 @@ fn check_function_args<'a>(
             vec![TypeCheckResult::new(
                 expr,
                 format!(
-                    "function or operator type mismatch. expect {:?}, get {:?}",
+                    "function or operator {} type mismatch. expect {}, get {:?}",
+                    name,
                     functions
                         .iter()
                         .map(|x| format!("{:?}", x.0))
@@ -135,7 +137,7 @@ fn check_interface_function_calling<'a>(
         .cloned()
         .flatten()
         .collect();
-    check_function_args(node, &functions, args)
+    check_function_args(node, function_kind.to_string(), &functions, args)
 }
 
 fn check_function<'a, 'b, 'c>(
@@ -363,8 +365,12 @@ fn check_expression<'a, 'b>(
                                 )
                             },
                         );
-                    let (return_ty, return_res) =
-                        check_function_args(expr, &function_candidates, params_ty);
+                    let (return_ty, return_res) = check_function_args(
+                        expr,
+                        format!("{}()", fn_name),
+                        &function_candidates,
+                        params_ty,
+                    );
                     return (
                         return_ty,
                         res.into_iter()
@@ -401,7 +407,7 @@ fn check_expression<'a, 'b>(
                     .collect(),
             )
         }
-        ExpressionKind::FunctionCallExpression(_, params_expr) => {
+        ExpressionKind::FunctionCallExpression(fn_name, params_expr) => {
             let (params_ty, params_res) = params_expr
                 .iter()
                 .map(|param_expr| (param_expr, check_expression(param_expr, context, flow)))
@@ -431,8 +437,12 @@ fn check_expression<'a, 'b>(
                     )
                 }
                 Some(FunctionNodeRef::GlobalFunction(function_ty_candidates)) => {
-                    let (return_ty, return_res) =
-                        check_function_args(expr, function_ty_candidates, params_ty);
+                    let (return_ty, return_res) = check_function_args(
+                        expr,
+                        format!("{}()", fn_name),
+                        function_ty_candidates,
+                        params_ty,
+                    );
                     (
                         return_ty,
                         params_res.into_iter().chain(return_res).collect(),

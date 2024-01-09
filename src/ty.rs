@@ -1,4 +1,9 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    fmt::{write, Display},
+};
+
+use miette::NamedSource;
 
 use crate::ast::{BinaryLiteral, UnaryLiteral};
 
@@ -109,6 +114,18 @@ pub enum FunctionKind {
     BinaryOp(BinaryLiteral),
     Subscript,
     SubscriptRange,
+}
+
+impl Display for FunctionKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FunctionKind::Function(name) => write!(f, "{}()", name),
+            FunctionKind::UnaryOp(op) => write!(f, "`{}`", op),
+            FunctionKind::BinaryOp(op) => write!(f, "`{}`", op),
+            FunctionKind::Subscript => write!(f, "`[]`"),
+            FunctionKind::SubscriptRange => write!(f, "`[:]`"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
