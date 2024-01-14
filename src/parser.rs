@@ -58,7 +58,7 @@ fn parse_literal(_node: &Node, context: &Context) -> Literal {
             node.children_by_field_name("entry", &mut node.walk())
                 .map(|node| {
                     (
-                        get_text(&node.child_by_field_name("key").unwrap(), context).into(),
+                        parse_string(get_text(&node.child_by_field_name("key").unwrap(), context)),
                         parse_expression(&node.child_by_field_name("value").unwrap(), context),
                     )
                 })
@@ -70,9 +70,22 @@ fn parse_literal(_node: &Node, context: &Context) -> Literal {
                     "path_string" => PathLiteral::Path(
                         get_text(&node.child_by_field_name("path").unwrap(), context).into(),
                     ),
-                    "path_reference_string" => PathLiteral::PathReference(Box::new(
-                        parse_expression(&node.child_by_field_name("value").unwrap(), context),
-                    )),
+                    "path_reference_string" => {
+                        PathLiteral::PathExpressionSubstitution(Box::new(Expression {
+                            id: NodeID::new(),
+                            span: Span(node.range()),
+                            kind: ExpressionKind::FunctionCallExpression(
+                                "string".to_owned(),
+                                vec![parse_expression(
+                                    &node.child_by_field_name("value").unwrap(),
+                                    context,
+                                )],
+                            ),
+                        }))
+                    }
+                    "path_bind_string" => PathLiteral::PathBinding(
+                        get_text(&node.child_by_field_name("value").unwrap(), context).into(),
+                    ),
                     _ => panic!(),
                 })
                 .collect(),

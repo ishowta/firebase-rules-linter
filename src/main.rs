@@ -5,7 +5,6 @@ use crate::{
     binder::bind,
     checker::{check, TypeCheckContext},
     globals::get_globals,
-    interfaces::get_interfaces,
     parser::parse,
 };
 
@@ -29,12 +28,9 @@ fn main() {
 
     let (bindings, symbol_references, bind_lint_result) = bind(&ast, &globals);
 
-    let interfaces = get_interfaces();
-
     let type_check_context = TypeCheckContext {
         bindings: &bindings,
         symbol_references: &symbol_references,
-        interfaces: &interfaces,
     };
 
     let type_check_result = check(&ast, &type_check_context);
@@ -44,7 +40,10 @@ fn main() {
         .chain(type_check_result.iter().map(|x| Report::from(x.clone())))
         .collect();
 
+    let result_count = results.len();
     for result in results {
         println!("{:?}", result.with_source_code(code.clone()));
     }
+
+    println!("{} errors found.", result_count);
 }

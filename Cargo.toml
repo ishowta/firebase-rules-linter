@@ -11,6 +11,8 @@ tree-sitter = "0.20.10"
 nanoid = "0.4.0"
 miette = { version = "5.10.0", features = ["fancy"] }
 thiserror = "1.0.56"
+base64 = "0.21.7"
+chrono = "0.4.31"
 
 [build-dependencies]
 cc = "*"

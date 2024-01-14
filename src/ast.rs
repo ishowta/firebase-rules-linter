@@ -174,7 +174,8 @@ pub enum Literal {
 #[derive(Clone, Debug)]
 pub enum PathLiteral {
     Path(String),
-    PathReference(Box<Expression>),
+    PathExpressionSubstitution(Box<Expression>),
+    PathBinding(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

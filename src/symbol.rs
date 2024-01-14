@@ -30,7 +30,7 @@ impl<'a> VariableNodeRef<'a> {
 #[derive(Clone, Copy, Debug)]
 pub enum FunctionNodeRef<'a> {
     Function(&'a Function),
-    GlobalFunction(&'a Vec<FunctionInterface>),
+    GlobalFunction(&'a Vec<FunctionInterface<'a>>),
 }
 
 impl<'a> FunctionNodeRef<'a> {

@@ -3,8 +3,8 @@ use thiserror::Error;
 
 use crate::{
     ast::{
-        Ast, Expression, ExpressionKind, Function, MatchPathLiteral, Node, Rule, RuleGroup,
-        RulesTree, Service,
+        Ast, Expression, ExpressionKind, Function, MatchPathLiteral, Node, PathLiteral, Rule,
+        RuleGroup, RulesTree, Service,
     },
     symbol::{Bindings, FunctionNodeRef, SymbolID, SymbolReferences, VariableNodeRef},
     ty::{FunctionInterface, TypeKind},
@@ -176,7 +176,7 @@ pub struct VariableShadowed {
     pub name: String,
     #[label("already declared here")]
     pub to: Option<SourceSpan>,
-    #[label]
+    #[label("declared here")]
     pub at: SourceSpan,
 }
 
@@ -187,7 +187,7 @@ pub struct FunctionShadowed {
     pub name: String,
     #[label("already declared here")]
     pub to: Option<SourceSpan>,
-    #[label]
+    #[label("declared here")]
     pub at: SourceSpan,
 }
 
@@ -245,7 +245,35 @@ fn bind_expression<'a, 'b>(
     bind_lint_results: &'b mut Vec<Report>,
 ) {
     match &expression.kind {
-        ExpressionKind::Literal(_) => (),
+        ExpressionKind::Literal(literal) => match literal {
+            crate::ast::Literal::Null => (),
+            crate::ast::Literal::Bool(_) => (),
+            crate::ast::Literal::Int(_) => (),
+            crate::ast::Literal::Float(_) => (),
+            crate::ast::Literal::String(_) => (),
+            crate::ast::Literal::List(elements) => {
+                for element_expr in elements {
+                    bind_expression(
+                        element_expr,
+                        scopes_definitions,
+                        bindings,
+                        bind_lint_results,
+                    )
+                }
+            }
+            crate::ast::Literal::Map(entries) => {
+                for (_, entry_expr) in entries {
+                    bind_expression(entry_expr, scopes_definitions, bindings, bind_lint_results)
+                }
+            }
+            crate::ast::Literal::Path(args) => {
+                for arg in args {
+                    if let PathLiteral::PathExpressionSubstitution(arg_expr) = arg {
+                        bind_expression(arg_expr, scopes_definitions, bindings, bind_lint_results)
+                    }
+                }
+            }
+        },
         ExpressionKind::Variable(variable) => {
             if let Some(symbol) = search_variable_symbol(&variable, scopes_definitions) {
                 let _ = bindings.variable_table.insert(&expression.id, symbol);
@@ -559,7 +587,7 @@ pub fn bind<'a>(
             .map(|(name, func)| {
                 (
                     *name,
-                    (SymbolID::new(), FunctionNodeRef::GlobalFunction(&func)),
+                    (SymbolID::new(), FunctionNodeRef::GlobalFunction(func)),
                 )
             })
             .collect(),
@@ -574,7 +602,7 @@ pub fn bind<'a>(
                         .map(|(name, func)| {
                             (
                                 *name,
-                                (SymbolID::new(), FunctionNodeRef::GlobalFunction(&func)),
+                                (SymbolID::new(), FunctionNodeRef::GlobalFunction(func)),
                             )
                         })
                         .collect(),

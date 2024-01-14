@@ -6,7 +6,8 @@
 - [x] Generic Type (List[T], Map[T], Set[T])
 - [x] Type coercion (integer -> float)
 - [x] map literal
-- [ ] Literal Types (map literal, string literal, boolean literal, number literal)
+- [x] Literal Types (map literal, string literal, boolean literal, number literal)
+- [ ] failable type, nullable type, union type
 - [ ] Flow typing (especially `is` typing on demand)
 - [ ] Generic Parameter
 
@@ -14,7 +15,6 @@
 
 - [ ] Request/Resource validation linting
 - [ ] Warn on Any
-- [ ] non-nullable
 
 ## Refine & Test
 
