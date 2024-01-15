@@ -1,11 +1,13 @@
 use base64::{engine::general_purpose, Engine as _};
-use std::collections::HashMap;
+use std::{collections::HashMap, iter::zip};
 
 use crate::{
     ast::{BinaryLiteral, UnaryLiteral},
     checker::TypeCheckResult,
+    orany::OrAny,
     ty::{
-        FunctionInterface, FunctionKind, Interface, MapLiteral, MayLiteral::*, MemberKind, TypeKind,
+        FunctionInterface, FunctionKind, Interface, ListLiteral, MapLiteral, MayLiteral::*,
+        MemberKind, TypeKind,
     },
 };
 
@@ -482,18 +484,66 @@ impl TypeKind {
                     (
                         FunctionKind::BinaryOp(BinaryLiteral::Eq),
                         vec![FunctionInterface(
-                            (
-                                vec![TypeKind::List(Box::new(ty.erase_literal_constraint()))],
-                                TypeKind::Boolean(Unknown),
-                            ),
-                            Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
+                            (vec![TypeKind::List(Unknown)], TypeKind::Boolean(Unknown)),
+                            Box::new(move |_, params| match (ty, &params[..]) {
+                                (
+                                    Literal(ListLiteral::Tuple(left)),
+                                    [TypeKind::List(Literal(ListLiteral::Tuple(right)))],
+                                ) if ((
+                                   OrAny::all(zip(left, right), |(left, right)| left.can_be(right)).and(
+                                    || {
+                                       OrAny::all(zip(left, right), |(left, right)| {
+                                            left.can_be(right)
+                                        })
+                                    },
+                                ))).is_true() =>
+                                {
+                                    (TypeKind::Boolean(Unknown), vec![])
+                                }
+                                _ => (TypeKind::Boolean(Unknown), vec![]),
+                            }),
                         )],
                     ),
                     (
                         FunctionKind::Subscript,
                         vec![FunctionInterface(
-                            (vec![TypeKind::Integer(Unknown)], *ty.clone()),
-                            Box::new(move |_, _| (*ty.clone(), vec![])),
+                            (vec![TypeKind::Integer(Unknown)], TypeKind::Any),
+                            Box::new(move |node, params| match (ty, &params[..]) {
+                                (
+                                Literal(ListLiteral::Tuple(tuple)),
+                                                    [TypeKind::Integer(Literal(index))],
+                                               ) => {
+                                    if let Result::Ok(index_uint) = usize::try_from(*index) {
+                                        if let Some(elem) = tuple.get(index_uint)
+                                        {
+                                            (elem.clone(), vec![])
+                                        } else {
+                                            (
+                                                TypeKind::List(Unknown),
+                                                vec![
+                                                    (TypeCheckResult {
+                                                        reason: "index out of range".to_owned(),
+                                                        at: node.get_span().into(),
+                                                    }),
+                                                ],
+                                            )
+                                        }
+                                    } else {
+                                        (
+                                            TypeKind::List(Unknown),
+                                            vec![
+                                                (TypeCheckResult {
+                                                    reason: "index must be unsigned integer"
+                                                        .to_owned(),
+                                                    at: node.get_span().into(),
+                                                }),
+                                            ],
+                                        )
+                                    }
+                                }
+                                (Literal(ListLiteral::Single(x)), _) => (*x.clone(), vec![]),
+                                _ => (TypeKind::Any, vec![]),
+                            }),
                         )],
                     ),
                     (
@@ -501,34 +551,77 @@ impl TypeKind {
                         vec![FunctionInterface(
                             (
                                 vec![TypeKind::Integer(Unknown), TypeKind::Integer(Unknown)],
-                                TypeKind::List(Box::new(*ty.clone())),
+                                TypeKind::List(Unknown),
                             ),
-                            Box::new(move |_, _| (TypeKind::List(Box::new(*ty.clone())), vec![])),
+                            Box::new(move |node, params| match (ty, &params[..]) {
+                                (
+                                    _,
+                                    [TypeKind::Integer(Literal(index)), TypeKind::Integer(Unknown)],
+                                )
+                                | (
+                                    _,
+                                    [TypeKind::Integer(Unknown), TypeKind::Integer(Literal(index))],
+                                ) if *index < 0 => (
+                                    TypeKind::List(Unknown),
+                                    vec![
+                                        (TypeCheckResult {
+                                            reason: "range index must be unsigned integer"
+                                                .to_owned(),
+                                            at: node.get_span().into(),
+                                        }),
+                                    ],
+                                ),
+                                (
+                                    _,
+                                    [TypeKind::Integer(Literal(from)), TypeKind::Integer(Literal(to))],
+                                ) if to <= from => (
+                                    TypeKind::List(Unknown),
+                                    vec![
+                                        (TypeCheckResult {
+                                            reason: "invalid range".to_owned(),
+                                            at: node.get_span().into(),
+                                        }),
+                                    ],
+                                ),
+                                (
+                                    Literal(ListLiteral::Tuple(tuple)),
+                                    [TypeKind::Integer(Literal(from)), TypeKind::Integer(Literal(to))],
+                                ) => {
+                                    if let Some(slice) = tuple
+                                        .get(*from as usize..*to as usize)
+                                    {
+                                        (TypeKind::List(Literal(ListLiteral::Tuple(slice.iter().cloned().collect()))), vec![])
+                                    } else {
+                                        (
+                                            TypeKind::List(Unknown),
+                                            vec![
+                                                (TypeCheckResult {
+                                                    reason: "index out of range".to_owned(),
+                                                    at: node.get_span().into(),
+                                                }),
+                                            ],
+                                        )
+                                    }
+                                }
+                                (Literal(ListLiteral::Single(x)), _) => (TypeKind::List(Literal(ListLiteral::Single(Box::new(*x.clone())))), vec![]),
+                                _ => (TypeKind::List(Unknown), vec![]),
+                            }),
                         )],
                     ),
                     (
                         FunctionKind::BinaryOp(BinaryLiteral::In),
                         vec![FunctionInterface(
-                            (
-                                vec![ty.erase_literal_constraint()],
-                                TypeKind::Boolean(Unknown),
-                            ),
+                            (vec![TypeKind::List(Unknown)], TypeKind::Boolean(Unknown)),
                             Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
                         )],
                     ),
                     (
                         FunctionKind::Function("concat".to_owned()),
                         vec![FunctionInterface(
-                            (
-                                vec![TypeKind::List(Box::new(TypeKind::Any))],
-                                TypeKind::List(Box::new(TypeKind::Any)),
-                            ),
+                            (vec![TypeKind::List(Unknown)], TypeKind::List(Unknown)),
                             Box::new(move |_, params| match &params[..] {
-                                [TypeKind::List(ty)] => (
-                                    TypeKind::List(Box::new(ty.erase_literal_constraint())),
-                                    vec![],
-                                ),
-                                _ => (TypeKind::List(Box::new(TypeKind::Any)), vec![]),
+                                [TypeKind::List(_)] => (TypeKind::List(Unknown), vec![]),
+                                _ => (TypeKind::List(Unknown), vec![]),
                             }),
                         )],
                     ),
@@ -536,17 +629,11 @@ impl TypeKind {
                         FunctionKind::Function("hasAll".to_owned()),
                         vec![
                             FunctionInterface(
-                                (
-                                    vec![TypeKind::List(Box::new(ty.erase_literal_constraint()))],
-                                    TypeKind::Boolean(Unknown),
-                                ),
+                                (vec![TypeKind::List(Unknown)], TypeKind::Boolean(Unknown)),
                                 Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
                             ),
                             FunctionInterface(
-                                (
-                                    vec![TypeKind::Set(Box::new(ty.erase_literal_constraint()))],
-                                    TypeKind::Boolean(Unknown),
-                                ),
+                                (vec![TypeKind::Set(Unknown)], TypeKind::Boolean(Unknown)),
                                 Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
                             ),
                         ],
@@ -555,17 +642,11 @@ impl TypeKind {
                         FunctionKind::Function("hasAny".to_owned()),
                         vec![
                             FunctionInterface(
-                                (
-                                    vec![TypeKind::List(Box::new(ty.erase_literal_constraint()))],
-                                    TypeKind::Boolean(Unknown),
-                                ),
+                                (vec![TypeKind::List(Unknown)], TypeKind::Boolean(Unknown)),
                                 Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
                             ),
                             FunctionInterface(
-                                (
-                                    vec![TypeKind::Set(Box::new(ty.erase_literal_constraint()))],
-                                    TypeKind::Boolean(Unknown),
-                                ),
+                                (vec![TypeKind::Set(Unknown)], TypeKind::Boolean(Unknown)),
                                 Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
                             ),
                         ],
@@ -574,17 +655,11 @@ impl TypeKind {
                         FunctionKind::Function("hasOnly".to_owned()),
                         vec![
                             FunctionInterface(
-                                (
-                                    vec![TypeKind::List(Box::new(ty.erase_literal_constraint()))],
-                                    TypeKind::Boolean(Unknown),
-                                ),
+                                (vec![TypeKind::List(Unknown)], TypeKind::Boolean(Unknown)),
                                 Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
                             ),
                             FunctionInterface(
-                                (
-                                    vec![TypeKind::Set(Box::new(ty.erase_literal_constraint()))],
-                                    TypeKind::Boolean(Unknown),
-                                ),
+                                (vec![TypeKind::Set(Unknown)], TypeKind::Boolean(Unknown)),
                                 Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
                             ),
                         ],
@@ -599,11 +674,17 @@ impl TypeKind {
                     (
                         FunctionKind::Function("removeAll".to_owned()),
                         vec![FunctionInterface(
-                            (
-                                vec![TypeKind::List(Box::new(ty.erase_literal_constraint()))],
-                                TypeKind::List(Box::new(*ty.clone())),
-                            ),
-                            Box::new(move |_, _| (*ty.clone(), vec![])),
+                            (vec![TypeKind::List(Unknown)], TypeKind::List(Unknown)),
+                            Box::new(move |_, _| match ty {
+                                Unknown => (TypeKind::List(Unknown), vec![]),
+                                Literal(lit) => match lit.max() {
+                                    TypeKind::Any => (TypeKind::List(Unknown), vec![]),
+                                    x => (
+                                        TypeKind::List(Literal(ListLiteral::Single(Box::new(x)))),
+                                        vec![],
+                                    ),
+                                },
+                            }),
                         )],
                     ),
                     (
@@ -616,8 +697,13 @@ impl TypeKind {
                     (
                         FunctionKind::Function("toSet".to_owned()),
                         vec![FunctionInterface(
-                            (vec![], TypeKind::Set(Box::new(*ty.clone()))),
-                            Box::new(move |_, _| (TypeKind::Set(Box::new(*ty.clone())), vec![])),
+                            (vec![], TypeKind::Set(Unknown)),
+                            Box::new(move |_, _| match ty {
+                                Literal(ListLiteral::Single(x)) => {
+                                    (TypeKind::Set(Literal(x.clone())), vec![])
+                                }
+                                _ => (TypeKind::Set(Unknown), vec![]),
+                            }),
                         )],
                     ),
                 ]);
@@ -728,7 +814,7 @@ impl TypeKind {
                             FunctionInterface(
                                 (
                                     vec![
-                                        TypeKind::List(Box::new(TypeKind::String(Unknown))),
+                                        TypeKind::List(Unknown),
                                         TypeKind::Any,
                                     ],
                                     TypeKind::Any,
@@ -740,9 +826,12 @@ impl TypeKind {
                     (
                         FunctionKind::Function("keys".to_owned()),
                         vec![FunctionInterface(
-                            (vec![], TypeKind::List(Box::new(TypeKind::String(Unknown)))),
-                            Box::new(move |_, _| {
-                                (TypeKind::List(Box::new(TypeKind::String(Unknown))), vec![])
+                            (vec![], TypeKind::List(Unknown)),
+                            Box::new(move |_, _| match left {
+                                Literal(MapLiteral { literals, default: None }) => (TypeKind::List(Literal(ListLiteral::Tuple(
+                                    literals.keys().map(|key| TypeKind::String(Literal(key.clone()))).collect()
+                                ))), vec![]),
+                                _ => (TypeKind::List(Unknown), vec![])
                             }),
                         )],
                     ),
@@ -765,15 +854,15 @@ impl TypeKind {
                     (
                         FunctionKind::Function("values".to_owned()),
                         vec![FunctionInterface(
-                            (vec![], TypeKind::List(Box::new(TypeKind::Any))),
+                            (vec![], TypeKind::List(Unknown)),
                             Box::new(move |_, _| match left {
                                 Literal(MapLiteral {
                                     literals,
                                     default: Some(default),
                                 }) if literals.is_empty() => {
-                                    (TypeKind::List(default.clone()), vec![])
+                                    (TypeKind::List(Literal(ListLiteral::Single(default.clone()))), vec![])
                                 }
-                                _ => (TypeKind::List(Box::new(TypeKind::Any)), vec![]),
+                                _ => (TypeKind::List(Unknown), vec![]),
                             }),
                         )],
                     ),
@@ -803,46 +892,36 @@ impl TypeKind {
                     (
                         FunctionKind::Function("addedKeys".to_owned()),
                         vec![FunctionInterface(
-                            (vec![], TypeKind::Set(Box::new(TypeKind::String(Unknown)))),
-                            Box::new(move |_, _| {
-                                (TypeKind::Set(Box::new(TypeKind::String(Unknown))), vec![])
-                            }),
+                            (vec![], TypeKind::Set(Unknown)),
+                            Box::new(move |_, _| (TypeKind::Set(Unknown), vec![])),
                         )],
                     ),
                     (
                         FunctionKind::Function("affectedKeys".to_owned()),
                         vec![FunctionInterface(
-                            (vec![], TypeKind::Set(Box::new(TypeKind::String(Unknown)))),
-                            Box::new(move |_, _| {
-                                (TypeKind::Set(Box::new(TypeKind::String(Unknown))), vec![])
-                            }),
+                            (vec![], TypeKind::Set(Unknown)),
+                            Box::new(move |_, _| (TypeKind::Set(Unknown), vec![])),
                         )],
                     ),
                     (
                         FunctionKind::Function("changedKeys".to_owned()),
                         vec![FunctionInterface(
-                            (vec![], TypeKind::Set(Box::new(TypeKind::String(Unknown)))),
-                            Box::new(move |_, _| {
-                                (TypeKind::Set(Box::new(TypeKind::String(Unknown))), vec![])
-                            }),
+                            (vec![], TypeKind::Set(Unknown)),
+                            Box::new(move |_, _| (TypeKind::Set(Unknown), vec![])),
                         )],
                     ),
                     (
                         FunctionKind::Function("removedKeys".to_owned()),
                         vec![FunctionInterface(
-                            (vec![], TypeKind::Set(Box::new(TypeKind::String(Unknown)))),
-                            Box::new(move |_, _| {
-                                (TypeKind::Set(Box::new(TypeKind::String(Unknown))), vec![])
-                            }),
+                            (vec![], TypeKind::Set(Unknown)),
+                            Box::new(move |_, _| (TypeKind::Set(Unknown), vec![])),
                         )],
                     ),
                     (
                         FunctionKind::Function("unchangedKeys".to_owned()),
                         vec![FunctionInterface(
-                            (vec![], TypeKind::Set(Box::new(TypeKind::String(Unknown)))),
-                            Box::new(move |_, _| {
-                                (TypeKind::Set(Box::new(TypeKind::String(Unknown))), vec![])
-                            }),
+                            (vec![], TypeKind::Set(Unknown)),
+                            Box::new(move |_, _| (TypeKind::Set(Unknown), vec![])),
                         )],
                     ),
                 ]);
@@ -1022,41 +1101,32 @@ impl TypeKind {
                     }
                 }
             }
-            TypeKind::Set(ty) => {
+            TypeKind::Set(lit) => {
                 interface.functions.extend([
                     (
                         FunctionKind::BinaryOp(BinaryLiteral::Eq),
                         vec![FunctionInterface(
-                            (
-                                vec![TypeKind::Set(Box::new(ty.erase_literal_constraint()))],
-                                TypeKind::Boolean(Unknown),
-                            ),
+                            (vec![TypeKind::Set(Unknown)], TypeKind::Boolean(Unknown)),
                             Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
                         )],
                     ),
                     (
                         FunctionKind::BinaryOp(BinaryLiteral::In),
                         vec![FunctionInterface(
-                            (
-                                vec![ty.erase_literal_constraint()],
-                                TypeKind::Boolean(Unknown),
-                            ),
+                            (vec![TypeKind::Set(Unknown)], TypeKind::Boolean(Unknown)),
                             Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
                         )],
                     ),
                     (
                         FunctionKind::Function("difference".to_owned()),
                         vec![FunctionInterface(
-                            (
-                                vec![TypeKind::Set(Box::new(TypeKind::Any))],
-                                TypeKind::Set(Box::new(TypeKind::Any)),
-                            ),
+                            (vec![TypeKind::Set(Unknown)], TypeKind::Set(Unknown)),
                             Box::new(move |_, params| match &params[..] {
-                                [TypeKind::Set(ty)] => (
-                                    TypeKind::Set(Box::new(ty.erase_literal_constraint())),
+                                [TypeKind::Set(Literal(ty))] => (
+                                    TypeKind::Set(Literal(Box::new(ty.erase_literal_constraint()))),
                                     vec![],
                                 ),
-                                _ => (TypeKind::Set(Box::new(TypeKind::Any)), vec![]),
+                                _ => (TypeKind::Set(Unknown), vec![]),
                             }),
                         )],
                     ),
@@ -1064,17 +1134,11 @@ impl TypeKind {
                         FunctionKind::Function("hasAll".to_owned()),
                         vec![
                             FunctionInterface(
-                                (
-                                    vec![TypeKind::List(Box::new(ty.erase_literal_constraint()))],
-                                    TypeKind::Boolean(Unknown),
-                                ),
+                                (vec![TypeKind::List(Unknown)], TypeKind::Boolean(Unknown)),
                                 Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
                             ),
                             FunctionInterface(
-                                (
-                                    vec![TypeKind::Set(Box::new(ty.erase_literal_constraint()))],
-                                    TypeKind::Boolean(Unknown),
-                                ),
+                                (vec![TypeKind::Set(Unknown)], TypeKind::Boolean(Unknown)),
                                 Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
                             ),
                         ],
@@ -1083,17 +1147,11 @@ impl TypeKind {
                         FunctionKind::Function("hasAny".to_owned()),
                         vec![
                             FunctionInterface(
-                                (
-                                    vec![TypeKind::List(Box::new(ty.erase_literal_constraint()))],
-                                    TypeKind::Boolean(Unknown),
-                                ),
+                                (vec![TypeKind::List(Unknown)], TypeKind::Boolean(Unknown)),
                                 Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
                             ),
                             FunctionInterface(
-                                (
-                                    vec![TypeKind::Set(Box::new(ty.erase_literal_constraint()))],
-                                    TypeKind::Boolean(Unknown),
-                                ),
+                                (vec![TypeKind::Set(Unknown)], TypeKind::Boolean(Unknown)),
                                 Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
                             ),
                         ],
@@ -1102,17 +1160,11 @@ impl TypeKind {
                         FunctionKind::Function("hasOnly".to_owned()),
                         vec![
                             FunctionInterface(
-                                (
-                                    vec![TypeKind::List(Box::new(ty.erase_literal_constraint()))],
-                                    TypeKind::Boolean(Unknown),
-                                ),
+                                (vec![TypeKind::List(Unknown)], TypeKind::Boolean(Unknown)),
                                 Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
                             ),
                             FunctionInterface(
-                                (
-                                    vec![TypeKind::Set(Box::new(ty.erase_literal_constraint()))],
-                                    TypeKind::Boolean(Unknown),
-                                ),
+                                (vec![TypeKind::Set(Unknown)], TypeKind::Boolean(Unknown)),
                                 Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
                             ),
                         ],
@@ -1120,16 +1172,13 @@ impl TypeKind {
                     (
                         FunctionKind::Function("intersection".to_owned()),
                         vec![FunctionInterface(
-                            (
-                                vec![TypeKind::Set(Box::new(TypeKind::Any))],
-                                TypeKind::Set(Box::new(TypeKind::Any)),
-                            ),
+                            (vec![TypeKind::Set(Unknown)], TypeKind::Set(Unknown)),
                             Box::new(move |_, params| match &params[..] {
-                                [TypeKind::Set(ty)] => (
-                                    TypeKind::Set(Box::new(ty.erase_literal_constraint())),
+                                [TypeKind::Set(Literal(ty))] => (
+                                    TypeKind::Set(Literal(Box::new(ty.erase_literal_constraint()))),
                                     vec![],
                                 ),
-                                _ => (TypeKind::Set(Box::new(TypeKind::Any)), vec![]),
+                                _ => (TypeKind::Set(Unknown), vec![]),
                             }),
                         )],
                     ),
@@ -1143,23 +1192,23 @@ impl TypeKind {
                     (
                         FunctionKind::Function("union".to_owned()),
                         vec![FunctionInterface(
-                            (
-                                vec![TypeKind::Set(Box::new(TypeKind::Any))],
-                                TypeKind::Set(Box::new(TypeKind::Any)),
-                            ),
+                            (vec![TypeKind::Set(Unknown)], TypeKind::Set(Unknown)),
                             Box::new(move |_, params| match &params[..] {
-                                [TypeKind::Set(ty)] => (
-                                    TypeKind::Set(Box::new(ty.erase_literal_constraint())),
+                                [TypeKind::Set(Literal(ty))] => (
+                                    TypeKind::Set(Literal(Box::new(ty.erase_literal_constraint()))),
                                     vec![],
                                 ),
-                                _ => (TypeKind::Set(Box::new(TypeKind::Any)), vec![]),
+                                _ => (TypeKind::Set(Unknown), vec![]),
                             }),
                         )],
                     ),
                 ]);
-                interface
-                    .members
-                    .extend([(MemberKind::AnyMember, *ty.clone())])
+                interface.members.extend([(MemberKind::AnyMember, {
+                    match lit {
+                        Unknown => TypeKind::Any,
+                        Literal(ty) => *ty.clone(),
+                    }
+                })])
             }
             TypeKind::String(ty) => {
                 interface.functions.extend([
@@ -1400,10 +1449,10 @@ impl TypeKind {
                         vec![FunctionInterface(
                             (
                                 vec![TypeKind::String(Unknown)],
-                                TypeKind::List(Box::new(TypeKind::String(Unknown))),
+                                TypeKind::List(Unknown),
                             ),
                             Box::new(move |_, _| {
-                                (TypeKind::List(Box::new(TypeKind::String(Unknown))), vec![])
+                                (TypeKind::List(Unknown), vec![])
                             }),
                         )],
                     ),
@@ -1568,51 +1617,51 @@ impl TypeKind {
                                                                 literals: HashMap::from([
                                                                     (
                                                                         "email".to_owned(),
-                                                                        TypeKind::List(Box::new(
+                                                                        TypeKind::List(Literal(ListLiteral::Single(Box::new(
                                                                             TypeKind::String(
                                                                                 Unknown,
-                                                                            ),
-                                                                        )),
+                                                                            )
+                                                                        ))))
                                                                     ),
                                                                     (
                                                                         "phone".to_owned(),
-                                                                        TypeKind::List(Box::new(
+                                                                        TypeKind::List(Literal(ListLiteral::Single(Box::new(
                                                                             TypeKind::String(
                                                                                 Unknown,
-                                                                            ),
-                                                                        )),
+                                                                            )
+                                                                        ))))
                                                                     ),
                                                                     (
                                                                         "google.com".to_owned(),
-                                                                        TypeKind::List(Box::new(
+                                                                        TypeKind::List(Literal(ListLiteral::Single(Box::new(
                                                                             TypeKind::String(
                                                                                 Unknown,
-                                                                            ),
-                                                                        )),
+                                                                            )
+                                                                        ))))
                                                                     ),
                                                                     (
                                                                         "facebook.com".to_owned(),
-                                                                        TypeKind::List(Box::new(
+                                                                        TypeKind::List(Literal(ListLiteral::Single(Box::new(
                                                                             TypeKind::String(
                                                                                 Unknown,
-                                                                            ),
-                                                                        )),
+                                                                            )
+                                                                        ))))
                                                                     ),
                                                                     (
                                                                         "github.com".to_owned(),
-                                                                        TypeKind::List(Box::new(
+                                                                        TypeKind::List(Literal(ListLiteral::Single(Box::new(
                                                                             TypeKind::String(
                                                                                 Unknown,
-                                                                            ),
-                                                                        )),
+                                                                            )
+                                                                        ))))
                                                                     ),
                                                                     (
                                                                         "twitter.com".to_owned(),
-                                                                        TypeKind::List(Box::new(
+                                                                        TypeKind::List(Literal(ListLiteral::Single(Box::new(
                                                                             TypeKind::String(
                                                                                 Unknown,
-                                                                            ),
-                                                                        )),
+                                                                            )
+                                                                        ))))
                                                                     ),
                                                                 ]),
                                                             })),

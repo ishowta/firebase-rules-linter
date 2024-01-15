@@ -8,8 +8,11 @@ use crate::{
         Ast, BinaryLiteral, Expression, ExpressionKind, Function, Literal, Node, NodeID,
         PathLiteral, Rule, RuleGroup,
     },
+    orany::OrAny,
     symbol::{Bindings, FunctionNodeRef, SymbolReferences, VariableNodeRef},
-    ty::{FunctionInterface, FunctionKind, MapLiteral, MayLiteral, MemberKind, TypeKind},
+    ty::{
+        FunctionInterface, FunctionKind, ListLiteral, MapLiteral, MayLiteral, MemberKind, TypeKind,
+    },
 };
 
 #[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq)]
@@ -45,16 +48,16 @@ fn check_can_be<'a, 'b>(
     from: &'b TypeKind,
     to: &'b TypeKind,
     expr: &'a Expression,
-) -> (Option<bool>, Vec<TypeCheckResult>) {
-    let passed: Option<bool> = from.can_be(to);
+) -> (OrAny, Vec<TypeCheckResult>) {
+    let passed: OrAny = from.can_be(to);
     match passed {
-        None => (None, vec![]),
-        Some(can) => {
+        OrAny::Any => (OrAny::Any, vec![]),
+        OrAny::Bool(can) => {
             if can {
-                (Some(true), vec![])
+                (OrAny::Bool(true), vec![])
             } else {
                 (
-                    Some(false),
+                    OrAny::Bool(false),
                     vec![TypeCheckResult::new(
                         expr,
                         format!("Expect {:?}, Get {:?}", to, from).into(),
@@ -69,20 +72,16 @@ fn check_can_be_candidates<'a, 'b>(
     from: &'b TypeKind,
     to_candidates: Vec<TypeKind>,
     expr: &'a Expression,
-) -> (Option<bool>, Vec<TypeCheckResult>) {
-    let passed: Option<bool> = to_candidates
-        .iter()
-        .map(|to: &TypeKind| from.can_be(to))
-        .collect::<Option<Vec<bool>>>()
-        .map(|res| res.iter().all(|b| *b));
+) -> (OrAny, Vec<TypeCheckResult>) {
+    let passed: OrAny = OrAny::all(to_candidates.iter(), |to: &TypeKind| from.can_be(to));
     match passed {
-        None => (None, vec![]),
-        Some(can) => {
+        OrAny::Any => (OrAny::Any, vec![]),
+        OrAny::Bool(can) => {
             if can {
-                (Some(true), vec![])
+                (OrAny::Bool(true), vec![])
             } else {
                 (
-                    Some(false),
+                    OrAny::Bool(false),
                     vec![TypeCheckResult::new(
                         expr,
                         format!("Expect {:?}, Get {:?}", to_candidates, from).into(),
@@ -100,17 +99,17 @@ fn check_function_args<'a>(
     functions: &Vec<&FunctionInterface>,
     args: Vec<TypeKind>,
 ) -> (TypeKind, Vec<TypeCheckResult>) {
-    if let Some((return_ty, return_result)) = functions.iter().find_map(
-        |FunctionInterface((params, _), generate_return_type)| match zip(&args, params)
-            .map(|(arg, param)| arg.can_be(param))
-            .collect::<Option<Vec<bool>>>()
-            .map(|res| res.iter().all(|b| *b))
-        {
-            Some(true) => Some(generate_return_type(expr, &args)),
-            Some(false) => None,
-            None => Some((TypeKind::Any, vec![])),
-        },
-    ) {
+    if let Some((return_ty, return_result)) =
+        functions
+            .iter()
+            .find_map(|FunctionInterface((params, _), generate_return_type)| {
+                match OrAny::all(zip(&args, params), |(arg, param)| arg.can_be(param)) {
+                    OrAny::Bool(true) => Some(generate_return_type(expr, &args)),
+                    OrAny::Bool(false) => None,
+                    OrAny::Any => Some((TypeKind::Any, vec![])),
+                }
+            })
+    {
         (return_ty.clone(), return_result)
     } else {
         (
@@ -232,17 +231,20 @@ fn check_expression<'a, 'b>(
             (TypeKind::String(MayLiteral::Literal(s.clone())), vec![])
         }
         ExpressionKind::Literal(Literal::List(items)) => {
-            let (item_ty, result) = items
-                .iter()
-                .map(|item| check_expression(item, context, flow))
-                .reduce(|(acc_ty, acc_result), (item_ty, item_result)| {
-                    (
-                        TypeKind::max(&acc_ty, &item_ty),
-                        [acc_result, item_result].concat(),
-                    )
-                })
-                .unwrap_or((TypeKind::Any, vec![]));
-            (TypeKind::List(Box::new(item_ty)), result)
+            let mut result = vec![];
+            (
+                TypeKind::List(MayLiteral::Literal(ListLiteral::Tuple(
+                    items
+                        .iter()
+                        .map(|item| {
+                            let (item_ty, item_res) = check_expression(item, context, flow);
+                            result.extend(item_res);
+                            item_ty
+                        })
+                        .collect(),
+                ))),
+                result,
+            )
         }
         ExpressionKind::Literal(Literal::Map(entries)) => {
             let (entries_type, entries_result) = entries
@@ -393,8 +395,8 @@ fn check_expression<'a, 'b>(
                     TypeKind::Float(MayLiteral::Unknown),
                 ],
                 "string" => vec![TypeKind::String(MayLiteral::Unknown)],
-                "list" => vec![TypeKind::List(Box::new(TypeKind::Any)).clone()],
-                "map" => vec![TypeKind::Map(MayLiteral::Unknown).clone()],
+                "list" => vec![TypeKind::List(MayLiteral::Unknown)],
+                "map" => vec![TypeKind::Map(MayLiteral::Unknown)],
                 "timestamp" => vec![TypeKind::Timestamp],
                 "duration" => vec![TypeKind::Duration],
                 "path" => vec![TypeKind::Path(MayLiteral::Unknown)],
@@ -583,13 +585,13 @@ fn check_rule<'a, 'b>(
     } = rule.condition
     {
     } else {
-        if let Some(true) = ty.can_be(&TypeKind::Boolean(MayLiteral::Literal(true))) {
+        if let OrAny::Bool(true) = ty.can_be(&TypeKind::Boolean(MayLiteral::Literal(true))) {
             result.push(TypeCheckResult {
                 reason: "always true".to_owned(),
                 at: rule.condition.get_span().into(),
             })
         }
-        if let Some(true) = ty.can_be(&TypeKind::Boolean(MayLiteral::Literal(false))) {
+        if let OrAny::Bool(true) = ty.can_be(&TypeKind::Boolean(MayLiteral::Literal(false))) {
             result.push(TypeCheckResult {
                 reason: "always false".to_owned(),
                 at: rule.condition.get_span().into(),

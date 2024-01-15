@@ -1,8 +1,9 @@
-use std::{collections::HashMap, fmt::Display, hash::Hash};
+use std::{collections::HashMap, fmt::Display, hash::Hash, iter::zip};
 
 use crate::{
     ast::{BinaryLiteral, Node, UnaryLiteral},
     checker::TypeCheckResult,
+    orany::OrAny,
 };
 
 #[derive(Debug, Clone)]
@@ -15,17 +16,37 @@ pub enum TypeKind {
     Float(MayLiteral<f64>),
     Integer(MayLiteral<i64>),
     LatLng,
-    List(Box<TypeKind>),
+    List(MayLiteral<ListLiteral>),
     Map(MayLiteral<MapLiteral>),
     MapDiff((MayLiteral<MapLiteral>, MayLiteral<MapLiteral>)),
     Path(MayLiteral<String>),
     PathTemplateUnBound(MayLiteral<Vec<String>>),
     PathTemplateBound(MayLiteral<Vec<String>>),
-    Set(Box<TypeKind>),
+    Set(MayLiteral<Box<TypeKind>>),
     String(MayLiteral<String>),
     Timestamp,
     Request,
     Resource,
+}
+
+#[derive(Debug, Clone)]
+pub enum ListLiteral {
+    Single(Box<TypeKind>),
+    Tuple(Vec<TypeKind>),
+}
+
+impl ListLiteral {
+    pub fn max(&self) -> TypeKind {
+        match self {
+            ListLiteral::Single(ty) => *ty.clone(),
+            ListLiteral::Tuple(tuple) => tuple
+                .clone()
+                .into_iter()
+                .reduce(|left, right| TypeKind::max(&left, &right))
+                .unwrap_or(TypeKind::Any)
+                .clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -54,14 +75,14 @@ impl<T: PartialEq> MayLiteral<T> {
 impl<T: Copy> Copy for MayLiteral<T> {}
 
 impl<T> MayLiteral<T> {
-    fn can_be_by<F>(&self, other: &Self, f: F) -> Option<bool>
+    fn can_be_by<F>(&self, other: &Self, f: F) -> OrAny
     where
-        F: FnOnce(&T, &T) -> Option<bool>,
+        F: FnOnce(&T, &T) -> OrAny,
     {
         match (self, other) {
-            (MayLiteral::Unknown, MayLiteral::Unknown) => Some(true),
-            (MayLiteral::Unknown, MayLiteral::Literal(_)) => Some(false),
-            (MayLiteral::Literal(_), MayLiteral::Unknown) => Some(true),
+            (MayLiteral::Unknown, MayLiteral::Unknown) => OrAny::Bool(true),
+            (MayLiteral::Unknown, MayLiteral::Literal(_)) => OrAny::Bool(false),
+            (MayLiteral::Literal(_), MayLiteral::Unknown) => OrAny::Bool(true),
             (MayLiteral::Literal(left), MayLiteral::Literal(right)) => f(left, right),
         }
     }
@@ -94,13 +115,10 @@ impl TypeKind {
         }
     }
 
-    pub fn is_type_coercion_to(&self, target: &Self) -> Option<bool> {
-        let coercion_result: Option<Vec<bool>> = self
-            .get_coercion_list()
-            .iter()
-            .map(|candidate| candidate.can_be(target))
-            .collect();
-        coercion_result.map(|result| result.iter().find(|b| **b).is_some())
+    pub fn is_type_coercion_to(&self, target: &Self) -> OrAny {
+        OrAny::any(self.get_coercion_list().iter(), |candidate| {
+            candidate.can_be(target)
+        })
     }
 
     pub fn is_any(&self) -> bool {
@@ -119,70 +137,68 @@ impl TypeKind {
         }
     }
 
-    pub fn make_bool_ty(from: Option<bool>) -> TypeKind {
+    pub fn make_bool_ty(from: OrAny) -> TypeKind {
         match from {
-            None => TypeKind::Boolean(MayLiteral::Unknown),
-            Some(true) => TypeKind::Boolean(MayLiteral::Literal(true)),
-            Some(false) => TypeKind::Boolean(MayLiteral::Literal(false)),
+            OrAny::Any => TypeKind::Boolean(MayLiteral::Unknown),
+            OrAny::Bool(true) => TypeKind::Boolean(MayLiteral::Literal(true)),
+            OrAny::Bool(false) => TypeKind::Boolean(MayLiteral::Literal(false)),
         }
     }
 
     /// subtyping
     ///
     /// return None if Any
-    pub fn can_be(&self, other: &Self) -> Option<bool> {
+    pub fn can_be(&self, other: &Self) -> OrAny {
         (match (self, other) {
-            (TypeKind::Any, _) => None,
-            (_, TypeKind::Any) => None,
-            (TypeKind::Null, TypeKind::Null) => Some(true),
-            (TypeKind::Boolean(left), TypeKind::Boolean(right)) => Some(left.can_be(right)),
-            (TypeKind::Bytes(left), TypeKind::Bytes(right)) => Some(left.can_be(right)),
-            (TypeKind::Duration, TypeKind::Duration) => Some(true),
-            (TypeKind::Float(left), TypeKind::Float(right)) => Some(left.can_be(right)),
-            (TypeKind::Integer(left), TypeKind::Integer(right)) => Some(left.can_be(right)),
-            (TypeKind::LatLng, TypeKind::LatLng) => Some(true),
-            (TypeKind::List(left), TypeKind::List(right)) => left.can_be(right),
+            (TypeKind::Any, _) => OrAny::Any,
+            (_, TypeKind::Any) => OrAny::Any,
+            (TypeKind::Null, TypeKind::Null) => OrAny::Bool(true),
+            (TypeKind::Boolean(left), TypeKind::Boolean(right)) => OrAny::Bool(left.can_be(right)),
+            (TypeKind::Bytes(left), TypeKind::Bytes(right)) => OrAny::Bool(left.can_be(right)),
+            (TypeKind::Duration, TypeKind::Duration) => OrAny::Bool(true),
+            (TypeKind::Float(left), TypeKind::Float(right)) => OrAny::Bool(left.can_be(right)),
+            (TypeKind::Integer(left), TypeKind::Integer(right)) => OrAny::Bool(left.can_be(right)),
+            (TypeKind::LatLng, TypeKind::LatLng) => OrAny::Bool(true),
+            (TypeKind::List(left), TypeKind::List(right)) => {
+                left.can_be_by(right, |left, right| match (left, right) {
+                    (ListLiteral::Single(left), ListLiteral::Single(right)) => left.can_be(right),
+                    (ListLiteral::Single(_), ListLiteral::Tuple(_)) => OrAny::Bool(false),
+                    (ListLiteral::Tuple(left), ListLiteral::Single(right)) => {
+                        OrAny::all(left.iter(), |item| item.can_be(right))
+                    }
+                    (ListLiteral::Tuple(left), ListLiteral::Tuple(right)) => {
+                        if left.len() == right.len() {
+                            OrAny::all(zip(left, right), |(left, right)| left.can_be(right))
+                        } else {
+                            OrAny::Bool(false)
+                        }
+                    }
+                })
+            }
             (TypeKind::Map(left), TypeKind::Map(right)) => left.can_be_by(right, |left, right| {
-                right
-                    .literals
-                    .iter()
-                    .map(|(right_key, right_value)| {
-                        if let Some(left_value) = left.literals.get(right_key) {
-                            left_value.can_be(right_value)
-                        } else {
-                            Some(false)
-                        }
+                OrAny::all(right.literals.iter(), |(right_key, right_value)| {
+                    if let Some(left_value) = left.literals.get(right_key) {
+                        left_value.can_be(right_value)
+                    } else {
+                        OrAny::Bool(false)
+                    }
+                })
+                .and(|| match &right.default {
+                    None => OrAny::Bool(true),
+                    Some(right_default_ty) => (if let Some(left_default_ty) = &left.default {
+                        left_default_ty.can_be(&right_default_ty)
+                    } else {
+                        OrAny::Bool(false)
                     })
-                    .collect::<Option<Vec<bool>>>()
-                    .map(|res| res.iter().all(|b| *b))
-                    .and_then(|prev| {
-                        if prev == false {
-                            Some(false)
-                        } else {
-                            match &right.default {
-                                None => Some(true),
-                                Some(right_default_ty) => (if let Some(left_default_ty) =
-                                    &left.default
-                                {
-                                    left_default_ty.can_be(&right_default_ty)
-                                } else {
-                                    Some(false)
-                                })
-                                .and_then(|prev| {
-                                    if prev == false {
-                                        Some(false)
-                                    } else {
-                                        left.literals
-                                            .iter()
-                                            .filter(|(key, _)| !right.literals.contains_key(*key))
-                                            .map(|(_, value)| value.can_be(&right_default_ty))
-                                            .collect::<Option<Vec<bool>>>()
-                                            .map(|res| res.iter().all(|b| *b))
-                                    }
-                                }),
-                            }
-                        }
-                    })
+                    .and(|| {
+                        OrAny::all(
+                            left.literals
+                                .iter()
+                                .filter(|(key, _)| !right.literals.contains_key(*key)),
+                            |(_, value)| value.can_be(&right_default_ty),
+                        )
+                    }),
+                })
             }),
             (TypeKind::MapDiff(left), TypeKind::MapDiff(right)) => left
                 .0
@@ -190,37 +206,29 @@ impl TypeKind {
                     TypeKind::Map(MayLiteral::Literal(left.clone()))
                         .can_be(&TypeKind::Map(MayLiteral::Literal(right.clone())))
                 })
-                .and_then(|prev| {
-                    if prev == false {
-                        Some(false)
-                    } else {
-                        left.1.can_be_by(&right.1, |left, right| {
-                            TypeKind::Map(MayLiteral::Literal(left.clone()))
-                                .can_be(&TypeKind::Map(MayLiteral::Literal(right.clone())))
-                        })
-                    }
+                .and(|| {
+                    left.1.can_be_by(&right.1, |left, right| {
+                        TypeKind::Map(MayLiteral::Literal(left.clone()))
+                            .can_be(&TypeKind::Map(MayLiteral::Literal(right.clone())))
+                    })
                 }),
-            (TypeKind::Path(left), TypeKind::Path(right)) => Some(left.can_be(right)),
+            (TypeKind::Path(left), TypeKind::Path(right)) => OrAny::Bool(left.can_be(right)),
             (TypeKind::PathTemplateUnBound(left), TypeKind::PathTemplateUnBound(right)) => {
-                Some(left.can_be(right))
+                OrAny::Bool(left.can_be(right))
             }
             (TypeKind::PathTemplateBound(left), TypeKind::PathTemplateBound(right)) => {
-                Some(left.can_be(right))
+                OrAny::Bool(left.can_be(right))
             }
-            (TypeKind::Set(left), TypeKind::Set(right)) => left.can_be(right),
-            (TypeKind::String(left), TypeKind::String(right)) => Some(left.can_be(right)),
-            (TypeKind::Timestamp, TypeKind::Timestamp) => Some(true),
-            (TypeKind::Request, TypeKind::Request) => Some(true),
-            (TypeKind::Resource, TypeKind::Resource) => Some(true),
-            _ => Some(false),
-        })
-        .and_then(|prev| {
-            if prev == true {
-                Some(true)
-            } else {
-                self.is_type_coercion_to(other)
+            (TypeKind::Set(left), TypeKind::Set(right)) => {
+                left.can_be_by(right, |left, right| left.can_be(right))
             }
+            (TypeKind::String(left), TypeKind::String(right)) => OrAny::Bool(left.can_be(right)),
+            (TypeKind::Timestamp, TypeKind::Timestamp) => OrAny::Bool(true),
+            (TypeKind::Request, TypeKind::Request) => OrAny::Bool(true),
+            (TypeKind::Resource, TypeKind::Resource) => OrAny::Bool(true),
+            _ => OrAny::Bool(false),
         })
+        .or(|| self.is_type_coercion_to(other))
     }
 
     pub fn min(left: &Self, right: &Self) -> Self {
@@ -261,13 +269,13 @@ impl TypeKind {
             TypeKind::Float(_) => TypeKind::Float(MayLiteral::Unknown),
             TypeKind::Integer(_) => TypeKind::Integer(MayLiteral::Unknown),
             TypeKind::LatLng => TypeKind::LatLng,
-            TypeKind::List(ty) => TypeKind::List(Box::new(ty.erase_literal_constraint())),
+            TypeKind::List(_) => TypeKind::List(MayLiteral::Unknown),
             TypeKind::Map(_) => TypeKind::Map(MayLiteral::Unknown),
             TypeKind::MapDiff(_) => TypeKind::MapDiff((MayLiteral::Unknown, MayLiteral::Unknown)),
             TypeKind::Path(_) => TypeKind::Path(MayLiteral::Unknown),
             TypeKind::PathTemplateUnBound(_) => TypeKind::PathTemplateUnBound(MayLiteral::Unknown),
             TypeKind::PathTemplateBound(_) => TypeKind::PathTemplateBound(MayLiteral::Unknown),
-            TypeKind::Set(ty) => TypeKind::Set(Box::new(ty.erase_literal_constraint())),
+            TypeKind::Set(_) => TypeKind::Set(MayLiteral::Unknown),
             TypeKind::String(_) => TypeKind::String(MayLiteral::Unknown),
             TypeKind::Timestamp => TypeKind::Timestamp,
             TypeKind::Request => TypeKind::Request,
