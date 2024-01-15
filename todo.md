@@ -7,14 +7,14 @@
 - [x] Type coercion (integer -> float)
 - [x] map literal
 - [x] Literal Types (map literal, string literal, boolean literal, number literal)
-- [ ] failable type, nullable type, union type
+- [x] Generic Parameter
 - [ ] Flow typing (especially `is` typing on demand)
-- [ ] Generic Parameter
 
 ## Linter
 
 - [ ] Request/Resource validation linting
 - [ ] Warn on Any
+- [ ] failable type, nullable type, union type
 
 ## Refine & Test
 
