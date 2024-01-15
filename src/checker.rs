@@ -12,7 +12,7 @@ use crate::{
     ty::{FunctionInterface, FunctionKind, MapLiteral, MayLiteral, MemberKind, TypeKind},
 };
 
-#[derive(Clone, Debug, Error, Diagnostic)]
+#[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq)]
 #[error("{reason}")]
 #[diagnostic()]
 pub struct TypeCheckResult {
@@ -496,7 +496,7 @@ got: `.{}`",
                         );
                     let (return_ty, return_res) = check_function_args(
                         expr,
-                        format!("{}()", fn_name),
+                        format!("`{}()`", fn_name),
                         Some(&obj_ty),
                         &function_candidates,
                         params_ty,
@@ -550,7 +550,7 @@ got: `.{}`",
                 Some(FunctionNodeRef::GlobalFunction(function_ty_candidates)) => {
                     let (return_ty, return_res) = check_function_args(
                         expr,
-                        format!("{}()", fn_name),
+                        format!("`{}()`", fn_name),
                         None,
                         &function_ty_candidates.iter().collect(),
                         params_ty,
@@ -575,6 +575,12 @@ fn check_rule<'a, 'b>(
         &rule.condition,
     );
     result.extend(res);
+    if let Some(true) = ty.can_be(&TypeKind::Boolean(MayLiteral::Literal(false))) {
+        result.push(TypeCheckResult {
+            reason: "always false".to_owned(),
+            at: rule.condition.get_span().into(),
+        })
+    }
     result
 }
 

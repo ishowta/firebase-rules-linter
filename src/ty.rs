@@ -288,7 +288,7 @@ pub enum FunctionKind {
 impl Display for FunctionKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FunctionKind::Function(name) => write!(f, "{}()", name),
+            FunctionKind::Function(name) => write!(f, "`{}()`", name),
             FunctionKind::UnaryOp(op) => write!(f, "`{}`", op),
             FunctionKind::BinaryOp(op) => write!(f, "`{}`", op),
             FunctionKind::Subscript => write!(f, "`[]`"),

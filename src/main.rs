@@ -33,7 +33,9 @@ fn main() {
         symbol_references: &symbol_references,
     };
 
-    let type_check_result = check(&ast, &type_check_context);
+    let mut type_check_result = check(&ast, &type_check_context);
+
+    type_check_result.dedup_by(|a, b| a == b);
 
     let results: Vec<Report> = bind_lint_result
         .into_iter()

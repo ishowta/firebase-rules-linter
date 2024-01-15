@@ -164,10 +164,8 @@ impl TypeKind {
                         vec![FunctionInterface(
                             (vec![TypeKind::Float(Unknown)], TypeKind::Boolean(Unknown)),
                             Box::new(move |_, params| match (ty, &params[..]) {
-                                (Literal(left), [TypeKind::Float(Literal(right))])
-                                    if left == right =>
-                                {
-                                    (TypeKind::Boolean(Literal(true)), vec![])
+                                (Literal(left), [TypeKind::Float(Literal(right))]) => {
+                                    (TypeKind::Boolean(Literal(left == right)), vec![])
                                 }
                                 _ => (TypeKind::Boolean(Unknown), vec![]),
                             }),
@@ -178,10 +176,8 @@ impl TypeKind {
                         vec![FunctionInterface(
                             (vec![TypeKind::Float(Unknown)], TypeKind::Boolean(Unknown)),
                             Box::new(move |_, params| match (ty, &params[..]) {
-                                (Literal(left), [TypeKind::Float(Literal(right))])
-                                    if left != right =>
-                                {
-                                    (TypeKind::Boolean(Literal(true)), vec![])
+                                (Literal(left), [TypeKind::Float(Literal(right))]) => {
+                                    (TypeKind::Boolean(Literal(left != right)), vec![])
                                 }
                                 _ => (TypeKind::Boolean(Unknown), vec![]),
                             }),
@@ -315,10 +311,8 @@ impl TypeKind {
                         vec![FunctionInterface(
                             (vec![TypeKind::Integer(Unknown)], TypeKind::Boolean(Unknown)),
                             Box::new(move |_, params| match (ty, &params[..]) {
-                                (Literal(left), [TypeKind::Integer(Literal(right))])
-                                    if left == right =>
-                                {
-                                    (TypeKind::Boolean(Literal(true)), vec![])
+                                (Literal(left), [TypeKind::Integer(Literal(right))]) => {
+                                    (TypeKind::Boolean(Literal(left == right)), vec![])
                                 }
                                 _ => (TypeKind::Boolean(Unknown), vec![]),
                             }),
@@ -329,10 +323,8 @@ impl TypeKind {
                         vec![FunctionInterface(
                             (vec![TypeKind::Integer(Unknown)], TypeKind::Boolean(Unknown)),
                             Box::new(move |_, params| match (ty, &params[..]) {
-                                (Literal(left), [TypeKind::Integer(Literal(right))])
-                                    if left == right =>
-                                {
-                                    (TypeKind::Boolean(Literal(true)), vec![])
+                                (Literal(left), [TypeKind::Integer(Literal(right))]) => {
+                                    (TypeKind::Boolean(Literal(left != right)), vec![])
                                 }
                                 _ => (TypeKind::Boolean(Unknown), vec![]),
                             }),
@@ -641,6 +633,13 @@ impl TypeKind {
                         )],
                     ),
                     (
+                        FunctionKind::BinaryOp(BinaryLiteral::NotEq),
+                        vec![FunctionInterface(
+                            (vec![TypeKind::Map(Unknown)], TypeKind::Boolean(Unknown)),
+                            Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
+                        )],
+                    ),
+                    (
                         FunctionKind::Subscript,
                         vec![FunctionInterface(
                             (vec![TypeKind::String(Unknown)], TypeKind::Any),
@@ -850,29 +849,50 @@ impl TypeKind {
                 interface.members.extend([])
             }
             TypeKind::Path(ty) => {
-                interface.functions.extend([(
-                    FunctionKind::BinaryOp(BinaryLiteral::Eq),
-                    vec![
-                        FunctionInterface(
-                            (vec![TypeKind::Path(Unknown)], TypeKind::Boolean(Unknown)),
-                            Box::new(move |_, params| match (ty, &params[..]) {
-                                (Literal(left), [TypeKind::Path(Literal(right))])
-                                    if left == right =>
-                                {
-                                    (TypeKind::Boolean(Literal(true)), vec![])
-                                }
-                                _ => (TypeKind::Boolean(Unknown), vec![]),
-                            }),
-                        ),
-                        FunctionInterface(
-                            (
-                                vec![TypeKind::PathTemplateBound(Unknown)],
-                                TypeKind::Boolean(Unknown),
+                interface.functions.extend([
+                    (
+                        FunctionKind::BinaryOp(BinaryLiteral::Eq),
+                        vec![
+                            FunctionInterface(
+                                (vec![TypeKind::Path(Unknown)], TypeKind::Boolean(Unknown)),
+                                Box::new(move |_, params| match (ty, &params[..]) {
+                                    (Literal(left), [TypeKind::Path(Literal(right))]) => {
+                                        (TypeKind::Boolean(Literal(left == right)), vec![])
+                                    }
+                                    _ => (TypeKind::Boolean(Unknown), vec![]),
+                                }),
                             ),
-                            Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
-                        ),
-                    ],
-                )]);
+                            FunctionInterface(
+                                (
+                                    vec![TypeKind::PathTemplateBound(Unknown)],
+                                    TypeKind::Boolean(Unknown),
+                                ),
+                                Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
+                            ),
+                        ],
+                    ),
+                    (
+                        FunctionKind::BinaryOp(BinaryLiteral::NotEq),
+                        vec![
+                            FunctionInterface(
+                                (vec![TypeKind::Path(Unknown)], TypeKind::Boolean(Unknown)),
+                                Box::new(move |_, params| match (ty, &params[..]) {
+                                    (Literal(left), [TypeKind::Path(Literal(right))]) => {
+                                        (TypeKind::Boolean(Literal(left != right)), vec![])
+                                    }
+                                    _ => (TypeKind::Boolean(Unknown), vec![]),
+                                }),
+                            ),
+                            FunctionInterface(
+                                (
+                                    vec![TypeKind::PathTemplateBound(Unknown)],
+                                    TypeKind::Boolean(Unknown),
+                                ),
+                                Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
+                            ),
+                        ],
+                    ),
+                ]);
                 interface.members.extend([])
             }
             TypeKind::PathTemplateUnBound(ty) => {
@@ -1149,9 +1169,9 @@ impl TypeKind {
                             (vec![TypeKind::String(Unknown)], TypeKind::Boolean(Unknown)),
                             Box::new(move |_, params| match (ty, &params[..]) {
                                 (Literal(left), [TypeKind::String(Literal(right))])
-                                    if left == right =>
+                                     =>
                                 {
-                                    (TypeKind::Boolean(Literal(true)), vec![])
+                                    (TypeKind::Boolean(Literal(left == right)), vec![])
                                 }
                                 _ => (TypeKind::Boolean(Unknown), vec![])
                             }),
@@ -1163,9 +1183,9 @@ impl TypeKind {
                             (vec![TypeKind::String(Unknown)], TypeKind::Boolean(Unknown)),
                             Box::new(move |_, params| match (ty, &params[..]) {
                                 (Literal(left), [TypeKind::String(Literal(right))])
-                                    if left == right =>
+                                     =>
                                 {
-                                    (TypeKind::Boolean(Literal(true)), vec![])
+                                    (TypeKind::Boolean(Literal(left != right)), vec![])
                                 }
                                 _ => (TypeKind::Boolean(Unknown), vec![])
                             }),
