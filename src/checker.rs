@@ -575,12 +575,28 @@ fn check_rule<'a, 'b>(
         &rule.condition,
     );
     result.extend(res);
-    if let Some(true) = ty.can_be(&TypeKind::Boolean(MayLiteral::Literal(false))) {
-        result.push(TypeCheckResult {
-            reason: "always false".to_owned(),
-            at: rule.condition.get_span().into(),
-        })
+
+    if let Expression {
+        id: _,
+        span: _,
+        kind: ExpressionKind::Literal(Literal::Bool(_)),
+    } = rule.condition
+    {
+    } else {
+        if let Some(true) = ty.can_be(&TypeKind::Boolean(MayLiteral::Literal(true))) {
+            result.push(TypeCheckResult {
+                reason: "always true".to_owned(),
+                at: rule.condition.get_span().into(),
+            })
+        }
+        if let Some(true) = ty.can_be(&TypeKind::Boolean(MayLiteral::Literal(false))) {
+            result.push(TypeCheckResult {
+                reason: "always false".to_owned(),
+                at: rule.condition.get_span().into(),
+            })
+        }
     }
+
     result
 }
 
