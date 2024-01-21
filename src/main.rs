@@ -25,7 +25,7 @@ fn main() {
 
     // println!("{:#?}", ast);
 
-    let globals = get_globals();
+    let (flow, globals) = get_globals();
 
     let (bindings, symbol_references, bind_lint_result) = bind(&ast, &globals);
 
@@ -34,7 +34,7 @@ fn main() {
         symbol_references: &symbol_references,
     };
 
-    let mut type_check_result = check(&ast, &type_check_context);
+    let mut type_check_result = check(&ast, &type_check_context, &flow);
 
     type_check_result.dedup_by(|a, b| a == b);
 

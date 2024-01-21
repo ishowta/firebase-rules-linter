@@ -4,146 +4,196 @@ use chrono::NaiveDate;
 
 use crate::{
     checker::TypeCheckResult,
-    ty::{FunctionInterface, ListLiteral, MapLiteral, MayLiteral::*, TypeKind},
+    ty::{Flow, FunctionInterface, ListLiteral, MapLiteral, MayLiteral::*, Ty, TypeID, TypeKind},
 };
 
 pub fn get_globals() -> (
-    HashMap<&'static str, TypeKind>,
-    HashMap<&'static str, Vec<FunctionInterface<'static>>>,
-    HashMap<&'static str, HashMap<&'static str, Vec<FunctionInterface<'static>>>>,
+    Flow,
+    (
+        HashMap<&'static str, Ty>,
+        HashMap<&'static str, Vec<FunctionInterface<'static>>>,
+        HashMap<&'static str, HashMap<&'static str, Vec<FunctionInterface<'static>>>>,
+    ),
 ) {
-    let resource_ty = TypeKind::Map(Literal(MapLiteral {
-        default: None,
-        literals: HashMap::from([
-            ("data".to_owned(), TypeKind::Map(Unknown)),
-            ("id".to_owned(), TypeKind::String(Unknown)),
-            ("__name__".to_owned(), TypeKind::Path(Unknown)),
-        ]),
-    }));
-    let request_ty = TypeKind::Map(Literal(MapLiteral {
+    let mut flow: Flow = HashMap::new();
+
+    let resource_data_ty_id = TypeID::new();
+    let resource_data_ty = Ty::Type(resource_data_ty_id.clone(), TypeKind::Map(Unknown));
+    let resource_ty_id = TypeID::new();
+    let resource_ty = Ty::Type(
+        resource_ty_id.clone(),
+        TypeKind::Map(Literal(MapLiteral {
+            default: None,
+            literals: HashMap::from([
+                ("data".to_owned(), Ty::FlowType(resource_data_ty_id.clone())),
+                ("id".to_owned(), Ty::new(TypeKind::String(Unknown))),
+                ("__name__".to_owned(), Ty::new(TypeKind::Path(Unknown))),
+            ]),
+        })),
+    );
+    let request_resource_data_ty_id = TypeID::new();
+    let request_resource_data_ty = Ty::Type(resource_data_ty_id.clone(), TypeKind::Map(Unknown));
+    let request_resource_ty_id = TypeID::new();
+    let request_resource_ty = Ty::Type(
+        request_resource_ty_id.clone(),
+        TypeKind::Map(Literal(MapLiteral {
+            default: None,
+            literals: HashMap::from([
+                ("data".to_owned(), Ty::FlowType(request_resource_data_ty_id.clone())),
+                ("id".to_owned(), Ty::new(TypeKind::String(Unknown))),
+                ("__name__".to_owned(), Ty::new(TypeKind::Path(Unknown))),
+            ]),
+        })),
+    );
+    let request_ty_id = TypeID::new();
+    let request_ty = Ty::Type(request_ty_id.clone(), TypeKind::Map(Literal(MapLiteral {
         default: None,
         literals: HashMap::from([
             (
                 "auth".to_owned(),
-                TypeKind::Map(Literal(MapLiteral {
+                Ty::new(TypeKind::Map(Literal(MapLiteral {
                     default: None,
                     literals: HashMap::from([
-                        ("uid".to_owned(), TypeKind::String(Unknown)),
+                        ("uid".to_owned(), Ty::new(TypeKind::String(Unknown))),
                         (
                             "token".to_owned(),
-                            TypeKind::Map(Literal(MapLiteral {
+                            Ty::new(TypeKind::Map(Literal(MapLiteral {
                                 default: None,
                                 literals: HashMap::from([
-                                    ("email".to_owned(), TypeKind::String(Unknown)),
-                                    ("email_verified".to_owned(), TypeKind::Boolean(Unknown)),
-                                    ("phone_number".to_owned(), TypeKind::String(Unknown)),
-                                    ("name".to_owned(), TypeKind::String(Unknown)),
-                                    ("sub".to_owned(), TypeKind::String(Unknown)),
+                                    ("email".to_owned(), Ty::new(TypeKind::String(Unknown))),
+                                    (
+                                        "email_verified".to_owned(),
+                                        Ty::new(TypeKind::Boolean(Unknown)),
+                                    ),
+                                    (
+                                        "phone_number".to_owned(),
+                                        Ty::new(TypeKind::String(Unknown)),
+                                    ),
+                                    ("name".to_owned(), Ty::new(TypeKind::String(Unknown))),
+                                    ("sub".to_owned(), Ty::new(TypeKind::String(Unknown))),
                                     (
                                         "firebase".to_owned(),
-                                        TypeKind::Map(Literal(MapLiteral {
+                                        Ty::new(TypeKind::Map(Literal(MapLiteral {
                                             default: None,
                                             literals: HashMap::from([
                                                 (
                                                     "identities".to_owned(),
-                                                    TypeKind::Map(Literal(MapLiteral {
+                                                    Ty::new(TypeKind::Map(Literal(MapLiteral {
                                                         default: None,
                                                         literals: HashMap::from([
                                                             (
                                                                 "email".to_owned(),
-                                                                TypeKind::List(Literal(
+                                                                Ty::new(TypeKind::List(Literal(
                                                                     ListLiteral::Single(Box::new(
-                                                                        TypeKind::String(Unknown),
+                                                                        Ty::new(TypeKind::String(Unknown)),
                                                                     )),
-                                                                )),
+                                                                ))),
                                                             ),
                                                             (
                                                                 "phone".to_owned(),
-                                                                TypeKind::List(Literal(
+                                                                Ty::new(TypeKind::List(Literal(
                                                                     ListLiteral::Single(Box::new(
-                                                                        TypeKind::String(Unknown),
+                                                                        Ty::new(TypeKind::String(Unknown)),
                                                                     )),
-                                                                )),
+                                                                ))),
                                                             ),
                                                             (
                                                                 "google.com".to_owned(),
-                                                                TypeKind::List(Literal(
+                                                                Ty::new(TypeKind::List(Literal(
                                                                     ListLiteral::Single(Box::new(
-                                                                        TypeKind::String(Unknown),
+                                                                        Ty::new(TypeKind::String(Unknown)),
                                                                     )),
-                                                                )),
+                                                                ))),
                                                             ),
                                                             (
                                                                 "facebook.com".to_owned(),
-                                                                TypeKind::List(Literal(
+                                                                Ty::new(TypeKind::List(Literal(
                                                                     ListLiteral::Single(Box::new(
-                                                                        TypeKind::String(Unknown),
+                                                                        Ty::new(TypeKind::String(Unknown)),
                                                                     )),
-                                                                )),
+                                                                ))),
                                                             ),
                                                             (
                                                                 "github.com".to_owned(),
-                                                                TypeKind::List(Literal(
+                                                                Ty::new(TypeKind::List(Literal(
                                                                     ListLiteral::Single(Box::new(
-                                                                        TypeKind::String(Unknown),
+                                                                        Ty::new(TypeKind::String(Unknown)),
                                                                     )),
-                                                                )),
+                                                                ))),
                                                             ),
                                                             (
                                                                 "twitter.com".to_owned(),
-                                                                TypeKind::List(Literal(
+                                                                Ty::new(TypeKind::List(Literal(
                                                                     ListLiteral::Single(Box::new(
-                                                                        TypeKind::String(Unknown),
+                                                                        Ty::new(TypeKind::String(Unknown)),
                                                                     )),
-                                                                )),
+                                                                ))),
                                                             ),
                                                         ]),
-                                                    })),
+                                                    }))),
                                                 ),
                                                 (
                                                     "sign_in_provider".to_owned(),
-                                                    TypeKind::String(Unknown),
+                                                    Ty::new(TypeKind::String(Unknown)),
                                                 ),
-                                                ("tenant".to_owned(), TypeKind::String(Unknown)),
+                                                (
+                                                    "tenant".to_owned(),
+                                                    Ty::new(TypeKind::String(Unknown)),
+                                                ),
                                             ]),
-                                        })),
+                                        }))),
                                     ),
                                 ]),
-                            })),
+                            }))),
                         ),
                     ]),
-                })),
+                }))),
             ),
-            ("method".to_owned(), TypeKind::String(Unknown)),
-            ("path".to_owned(), TypeKind::Path(Unknown)),
+            ("method".to_owned(), Ty::new(TypeKind::String(Unknown))),
+            ("path".to_owned(), Ty::new(TypeKind::Path(Unknown))),
             (
                 "query".to_owned(),
-                TypeKind::Map(Literal(MapLiteral {
+                Ty::new(TypeKind::Map(Literal(MapLiteral {
                     default: None,
                     literals: HashMap::from([
-                        ("limit".to_owned(), TypeKind::Integer(Unknown)),
-                        ("offset".to_owned(), TypeKind::Any),
-                        ("orderBy".to_owned(), TypeKind::String(Unknown)),
+                        ("limit".to_owned(), Ty::new(TypeKind::Integer(Unknown))),
+                        ("offset".to_owned(), Ty::new(TypeKind::Any)),
+                        ("orderBy".to_owned(), Ty::new(TypeKind::String(Unknown))),
                     ]),
-                })),
+                }))),
             ),
-            ("resource".to_owned(), resource_ty.clone()),
-            ("time".to_owned(), TypeKind::Timestamp),
+            ("resource".to_owned(), Ty::FlowType(request_resource_ty_id.clone())),
+            ("time".to_owned(), Ty::new(TypeKind::Timestamp)),
+        ]),
+    })));
+    flow.insert(resource_data_ty_id.clone(), resource_data_ty);
+    flow.insert(resource_ty_id.clone(), resource_ty);
+    flow.insert(request_resource_data_ty_id.clone(), request_resource_data_ty);
+    flow.insert(request_resource_ty_id.clone(), request_resource_ty);
+    flow.insert(request_ty_id.clone(), request_ty);
+
+    let unknown_resource_ty = TypeKind::Map(Literal(MapLiteral {
+        default: None,
+        literals: HashMap::from([
+            ("data".to_owned(), Ty::new(TypeKind::Map(Unknown))),
+            ("id".to_owned(), Ty::new(TypeKind::String(Unknown))),
+            ("__name__".to_owned(), Ty::new(TypeKind::Path(Unknown))),
         ]),
     }));
-    (
+    let result = (
         HashMap::from([
-            ("request", request_ty.clone()),
-            ("resource", resource_ty.clone()),
+            ("request", Ty::FlowType(request_ty_id.clone())),
+            ("resource", Ty::FlowType(resource_ty_id.clone())),
         ]),
         HashMap::from([
             (
                 "debug",
                 vec![FunctionInterface(
                     (vec![TypeKind::Any], TypeKind::Any),
-                    Box::new(move |_, params| match &params[..] {
-                        [ty] => (ty.clone(), vec![]),
-                        _ => (TypeKind::Any, vec![]),
+                    Box::new(move |_, params, _| match &params[..] {
+                        // TODO
+                        [ty] => (Ty::new((**ty).clone()), vec![]),
+                        _ => (Ty::new(TypeKind::Any), vec![]),
                     }),
                 )],
             ),
@@ -151,33 +201,33 @@ pub fn get_globals() -> (
                 "exists",
                 vec![FunctionInterface(
                     (vec![TypeKind::Path(Unknown)], TypeKind::Boolean(Unknown)),
-                    Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
+                    Box::new(move |_, _, _| (Ty::new(TypeKind::Boolean(Unknown)), vec![])),
                 )],
             ),
             (
                 "existsAfter",
                 vec![FunctionInterface(
                     (vec![TypeKind::Path(Unknown)], TypeKind::Boolean(Unknown)),
-                    Box::new(move |_, _| (TypeKind::Boolean(Unknown), vec![])),
+                    Box::new(move |_, _, _| (Ty::new(TypeKind::Boolean(Unknown)), vec![])),
                 )],
             ),
             (
                 "get",
                 vec![FunctionInterface(
-                    (vec![TypeKind::Path(Unknown)], resource_ty.clone()),
+                    (vec![TypeKind::Path(Unknown)], unknown_resource_ty.clone()),
                     {
-                        let resource_ty = resource_ty.clone();
-                        Box::new(move |_, _| (resource_ty.clone(), vec![]))
+                        let unknown_resource_ty = unknown_resource_ty.clone();
+                        Box::new(move |_, _, _| (Ty::new(unknown_resource_ty.clone()), vec![]))
                     },
                 )],
             ),
             (
                 "getAfter",
                 vec![FunctionInterface(
-                    (vec![TypeKind::Path(Unknown)], resource_ty.clone()),
+                    (vec![TypeKind::Path(Unknown)], unknown_resource_ty.clone()),
                     {
-                        let resource_ty = resource_ty.clone();
-                        Box::new(move |_, _| (resource_ty.clone(), vec![]))
+                        let unknown_resource_ty = unknown_resource_ty.clone();
+                        Box::new(move |_, _, _| (Ty::new(unknown_resource_ty.clone()), vec![]))
                     },
                 )],
             ),
@@ -186,15 +236,15 @@ pub fn get_globals() -> (
                 vec![
                     FunctionInterface(
                         (vec![TypeKind::String(Unknown)], TypeKind::Float(Unknown)),
-                        Box::new(move |_, _| (TypeKind::Float(Unknown), vec![])),
+                        Box::new(move |_, _, _| (Ty::new(TypeKind::Float(Unknown)), vec![])),
                     ),
                     FunctionInterface(
                         (vec![TypeKind::Integer(Unknown)], TypeKind::Float(Unknown)),
-                        Box::new(move |_, _| (TypeKind::Float(Unknown), vec![])),
+                        Box::new(move |_, _, _| (Ty::new(TypeKind::Float(Unknown)), vec![])),
                     ),
                     FunctionInterface(
                         (vec![TypeKind::Float(Unknown)], TypeKind::Float(Unknown)),
-                        Box::new(move |_, _| (TypeKind::Float(Unknown), vec![])),
+                        Box::new(move |_, _, _| (Ty::new(TypeKind::Float(Unknown)), vec![])),
                     ),
                 ],
             ),
@@ -203,15 +253,15 @@ pub fn get_globals() -> (
                 vec![
                     FunctionInterface(
                         (vec![TypeKind::String(Unknown)], TypeKind::Integer(Unknown)),
-                        Box::new(move |_, _| (TypeKind::Integer(Unknown), vec![])),
+                        Box::new(move |_, _, _| (Ty::new(TypeKind::Integer(Unknown)), vec![])),
                     ),
                     FunctionInterface(
                         (vec![TypeKind::Integer(Unknown)], TypeKind::Integer(Unknown)),
-                        Box::new(move |_, _| (TypeKind::Integer(Unknown), vec![])),
+                        Box::new(move |_, _, _| (Ty::new(TypeKind::Integer(Unknown)), vec![])),
                     ),
                     FunctionInterface(
                         (vec![TypeKind::Float(Unknown)], TypeKind::Integer(Unknown)),
-                        Box::new(move |_, _| (TypeKind::Integer(Unknown), vec![])),
+                        Box::new(move |_, _, _| (Ty::new(TypeKind::Integer(Unknown)), vec![])),
                     ),
                 ],
             ),
@@ -220,36 +270,39 @@ pub fn get_globals() -> (
                 vec![
                     FunctionInterface(
                         (vec![TypeKind::Boolean(Unknown)], TypeKind::String(Unknown)),
-                        Box::new(move |_, _| (TypeKind::String(Unknown), vec![])),
+                        Box::new(move |_, _, _| (Ty::new(TypeKind::String(Unknown)), vec![])),
                     ),
                     FunctionInterface(
                         (vec![TypeKind::Integer(Unknown)], TypeKind::String(Unknown)),
-                        Box::new(move |_, _| (TypeKind::String(Unknown), vec![])),
+                        Box::new(move |_, _, _| (Ty::new(TypeKind::String(Unknown)), vec![])),
                     ),
                     FunctionInterface(
                         (vec![TypeKind::Float(Unknown)], TypeKind::String(Unknown)),
-                        Box::new(move |_, _| (TypeKind::String(Unknown), vec![])),
+                        Box::new(move |_, _, _| (Ty::new(TypeKind::String(Unknown)), vec![])),
                     ),
                     FunctionInterface(
                         (
                             vec![TypeKind::Null],
                             TypeKind::String(Literal("null".to_owned())),
                         ),
-                        Box::new(move |_, _| {
-                            (TypeKind::String(Literal("null".to_owned())), vec![])
+                        Box::new(move |_, _, _| {
+                            (
+                                Ty::new(TypeKind::String(Literal("null".to_owned()))),
+                                vec![],
+                            )
                         }),
                     ),
                     FunctionInterface(
                         (vec![TypeKind::String(Unknown)], TypeKind::String(Unknown)),
-                        Box::new(move |_, _| (TypeKind::String(Unknown), vec![])),
+                        Box::new(move |_, _, _| (Ty::new(TypeKind::String(Unknown)), vec![])),
                     ),
                     FunctionInterface(
                         (vec![TypeKind::Path(Unknown)], TypeKind::String(Unknown)),
-                        Box::new(move |_, params| match &params[..] {
+                        Box::new(move |_, params, _| match &params[..] {
                             [TypeKind::Path(Literal(str))] => {
-                                (TypeKind::String(Literal(str.clone())), vec![])
+                                (Ty::new(TypeKind::String(Literal(str.clone()))), vec![])
                             }
-                            _ => (TypeKind::String(Unknown), vec![]),
+                            _ => (Ty::new(TypeKind::String(Unknown)), vec![]),
                         }),
                     ),
                     FunctionInterface(
@@ -257,7 +310,7 @@ pub fn get_globals() -> (
                             vec![TypeKind::PathTemplateBound(Unknown)],
                             TypeKind::String(Unknown),
                         ),
-                        Box::new(move |_, _| (TypeKind::String(Unknown), vec![])),
+                        Box::new(move |_, _, _| (Ty::new(TypeKind::String(Unknown)), vec![])),
                     ),
                 ],
             ),
@@ -265,11 +318,11 @@ pub fn get_globals() -> (
                 "path",
                 vec![FunctionInterface(
                     (vec![TypeKind::String(Unknown)], TypeKind::Path(Unknown)),
-                    Box::new(move |_, params| match &params[..] {
+                    Box::new(move |_, params, _| match &params[..] {
                         [TypeKind::String(Literal(str))] => {
-                            (TypeKind::Path(Literal(str.clone())), vec![])
+                            (Ty::new(TypeKind::Path(Literal(str.clone()))), vec![])
                         }
-                        _ => (TypeKind::Path(Unknown), vec![]),
+                        _ => (Ty::new(TypeKind::Path(Unknown)), vec![]),
                     }),
                 )],
             ),
@@ -282,7 +335,7 @@ pub fn get_globals() -> (
                         "abs",
                         vec![FunctionInterface(
                             (vec![TypeKind::Duration], TypeKind::Duration),
-                            Box::new(move |_, _| (TypeKind::Duration, vec![])),
+                            Box::new(move |_, _, _| (Ty::new(TypeKind::Duration), vec![])),
                         )],
                     ),
                     (
@@ -297,7 +350,7 @@ pub fn get_globals() -> (
                                 ],
                                 TypeKind::Duration,
                             ),
-                            Box::new(move |_, _| (TypeKind::Duration, vec![])),
+                            Box::new(move |_, _, _| (Ty::new(TypeKind::Duration), vec![])),
                         )],
                     ),
                     (
@@ -307,14 +360,14 @@ pub fn get_globals() -> (
                                 vec![TypeKind::Integer(Unknown), TypeKind::String(Unknown)],
                                 TypeKind::Duration,
                             ),
-                            Box::new(move |_, params| match &params[..] {
+                            Box::new(move |_, params, _| match &params[..] {
                                 [TypeKind::String(Literal(str))]
                                     if ["w", "d", "h", "m", "s", "ms", "ns"]
                                         .contains(&(str as &str)) =>
                                 {
-                                    (TypeKind::Duration, vec![])
+                                    (Ty::new(TypeKind::Duration), vec![])
                                 }
-                                _ => (TypeKind::Duration, vec![]),
+                                _ => (Ty::new(TypeKind::Duration), vec![]),
                             }),
                         )],
                     ),
@@ -328,11 +381,15 @@ pub fn get_globals() -> (
                         vec![
                             FunctionInterface(
                                 (vec![TypeKind::Bytes(Unknown)], TypeKind::Bytes(Unknown)),
-                                Box::new(move |_, _| (TypeKind::Bytes(Unknown), vec![])),
+                                Box::new(move |_, _, _| {
+                                    (Ty::new(TypeKind::Bytes(Unknown)), vec![])
+                                }),
                             ),
                             FunctionInterface(
                                 (vec![TypeKind::String(Unknown)], TypeKind::Bytes(Unknown)),
-                                Box::new(move |_, _| (TypeKind::Bytes(Unknown), vec![])),
+                                Box::new(move |_, _, _| {
+                                    (Ty::new(TypeKind::Bytes(Unknown)), vec![])
+                                }),
                             ),
                         ],
                     ),
@@ -341,11 +398,15 @@ pub fn get_globals() -> (
                         vec![
                             FunctionInterface(
                                 (vec![TypeKind::Bytes(Unknown)], TypeKind::Bytes(Unknown)),
-                                Box::new(move |_, _| (TypeKind::Bytes(Unknown), vec![])),
+                                Box::new(move |_, _, _| {
+                                    (Ty::new(TypeKind::Bytes(Unknown)), vec![])
+                                }),
                             ),
                             FunctionInterface(
                                 (vec![TypeKind::String(Unknown)], TypeKind::Bytes(Unknown)),
-                                Box::new(move |_, _| (TypeKind::Bytes(Unknown), vec![])),
+                                Box::new(move |_, _, _| {
+                                    (Ty::new(TypeKind::Bytes(Unknown)), vec![])
+                                }),
                             ),
                         ],
                     ),
@@ -354,11 +415,15 @@ pub fn get_globals() -> (
                         vec![
                             FunctionInterface(
                                 (vec![TypeKind::Bytes(Unknown)], TypeKind::Bytes(Unknown)),
-                                Box::new(move |_, _| (TypeKind::Bytes(Unknown), vec![])),
+                                Box::new(move |_, _, _| {
+                                    (Ty::new(TypeKind::Bytes(Unknown)), vec![])
+                                }),
                             ),
                             FunctionInterface(
                                 (vec![TypeKind::String(Unknown)], TypeKind::Bytes(Unknown)),
-                                Box::new(move |_, _| (TypeKind::Bytes(Unknown), vec![])),
+                                Box::new(move |_, _, _| {
+                                    (Ty::new(TypeKind::Bytes(Unknown)), vec![])
+                                }),
                             ),
                         ],
                     ),
@@ -367,11 +432,15 @@ pub fn get_globals() -> (
                         vec![
                             FunctionInterface(
                                 (vec![TypeKind::Bytes(Unknown)], TypeKind::Bytes(Unknown)),
-                                Box::new(move |_, _| (TypeKind::Bytes(Unknown), vec![])),
+                                Box::new(move |_, _, _| {
+                                    (Ty::new(TypeKind::Bytes(Unknown)), vec![])
+                                }),
                             ),
                             FunctionInterface(
                                 (vec![TypeKind::String(Unknown)], TypeKind::Bytes(Unknown)),
-                                Box::new(move |_, _| (TypeKind::Bytes(Unknown), vec![])),
+                                Box::new(move |_, _, _| {
+                                    (Ty::new(TypeKind::Bytes(Unknown)), vec![])
+                                }),
                             ),
                         ],
                     ),
@@ -386,7 +455,7 @@ pub fn get_globals() -> (
                             vec![TypeKind::Float(Unknown), TypeKind::Float(Unknown)],
                             TypeKind::LatLng,
                         ),
-                        Box::new(move |_, _| (TypeKind::LatLng, vec![])),
+                        Box::new(move |_, _, _| (Ty::new(TypeKind::LatLng), vec![])),
                     )],
                 )]),
             ),
@@ -398,20 +467,20 @@ pub fn get_globals() -> (
                         vec![
                             FunctionInterface(
                                 (vec![TypeKind::Integer(Unknown)], TypeKind::Integer(Unknown)),
-                                Box::new(move |_, params| match &params[..] {
+                                Box::new(move |_, params, _| match &params[..] {
                                     [TypeKind::Integer(Literal(x))] => {
-                                        (TypeKind::Integer(Literal(-x)), vec![])
+                                        (Ty::new(TypeKind::Integer(Literal(-x))), vec![])
                                     }
-                                    _ => (TypeKind::Integer(Unknown), vec![]),
+                                    _ => (Ty::new(TypeKind::Integer(Unknown)), vec![]),
                                 }),
                             ),
                             FunctionInterface(
                                 (vec![TypeKind::Float(Unknown)], TypeKind::Float(Unknown)),
-                                Box::new(move |_, params| match &params[..] {
+                                Box::new(move |_, params, _| match &params[..] {
                                     [TypeKind::Float(Literal(x))] => {
-                                        (TypeKind::Float(Literal(-x)), vec![])
+                                        (Ty::new(TypeKind::Float(Literal(-x))), vec![])
                                     }
-                                    _ => (TypeKind::Float(Unknown), vec![]),
+                                    _ => (Ty::new(TypeKind::Float(Unknown)), vec![]),
                                 }),
                             ),
                         ],
@@ -420,11 +489,11 @@ pub fn get_globals() -> (
                         "ceil",
                         vec![FunctionInterface(
                             (vec![TypeKind::Float(Unknown)], TypeKind::Float(Unknown)),
-                            Box::new(move |_, params| match &params[..] {
+                            Box::new(move |_, params, _| match &params[..] {
                                 [TypeKind::Float(Literal(x))] => {
-                                    (TypeKind::Float(Literal(f64::ceil(*x))), vec![])
+                                    (Ty::new(TypeKind::Float(Literal(f64::ceil(*x)))), vec![])
                                 }
-                                _ => (TypeKind::Float(Unknown), vec![]),
+                                _ => (Ty::new(TypeKind::Float(Unknown)), vec![]),
                             }),
                         )],
                     ),
@@ -432,11 +501,11 @@ pub fn get_globals() -> (
                         "floor",
                         vec![FunctionInterface(
                             (vec![TypeKind::Float(Unknown)], TypeKind::Float(Unknown)),
-                            Box::new(move |_, params| match &params[..] {
+                            Box::new(move |_, params, _| match &params[..] {
                                 [TypeKind::Float(Literal(x))] => {
-                                    (TypeKind::Float(Literal(f64::floor(*x))), vec![])
+                                    (Ty::new(TypeKind::Float(Literal(f64::floor(*x)))), vec![])
                                 }
-                                _ => (TypeKind::Float(Unknown), vec![]),
+                                _ => (Ty::new(TypeKind::Float(Unknown)), vec![]),
                             }),
                         )],
                     ),
@@ -447,11 +516,11 @@ pub fn get_globals() -> (
                                 vec![TypeKind::Float(Unknown), TypeKind::Float(Unknown)],
                                 TypeKind::Float(Unknown),
                             ),
-                            Box::new(move |_, params| match &params[..] {
+                            Box::new(move |_, params, _| match &params[..] {
                                 [TypeKind::Float(Literal(base)), TypeKind::Float(Literal(exp))] => {
-                                    (TypeKind::Float(Literal(base.powf(*exp))), vec![])
+                                    (Ty::new(TypeKind::Float(Literal(base.powf(*exp)))), vec![])
                                 }
-                                _ => (TypeKind::Float(Unknown), vec![]),
+                                _ => (Ty::new(TypeKind::Float(Unknown)), vec![]),
                             }),
                         )],
                     ),
@@ -459,11 +528,11 @@ pub fn get_globals() -> (
                         "round",
                         vec![FunctionInterface(
                             (vec![TypeKind::Float(Unknown)], TypeKind::Float(Unknown)),
-                            Box::new(move |_, params| match &params[..] {
+                            Box::new(move |_, params, _| match &params[..] {
                                 [TypeKind::Float(Literal(x))] => {
-                                    (TypeKind::Float(Literal(f64::round(*x))), vec![])
+                                    (Ty::new(TypeKind::Float(Literal(f64::round(*x)))), vec![])
                                 }
-                                _ => (TypeKind::Float(Unknown), vec![]),
+                                _ => (Ty::new(TypeKind::Float(Unknown)), vec![]),
                             }),
                         )],
                     ),
@@ -471,11 +540,11 @@ pub fn get_globals() -> (
                         "sqrt",
                         vec![FunctionInterface(
                             (vec![TypeKind::Float(Unknown)], TypeKind::Float(Unknown)),
-                            Box::new(move |_, params| match &params[..] {
+                            Box::new(move |_, params, _| match &params[..] {
                                 [TypeKind::Float(Literal(x))] => {
-                                    (TypeKind::Float(Literal(f64::sqrt(*x))), vec![])
+                                    (Ty::new(TypeKind::Float(Literal(f64::sqrt(*x)))), vec![])
                                 }
-                                _ => (TypeKind::Float(Unknown), vec![]),
+                                _ => (Ty::new(TypeKind::Float(Unknown)), vec![]),
                             }),
                         )],
                     ),
@@ -495,10 +564,10 @@ pub fn get_globals() -> (
                                 ],
                                 TypeKind::Timestamp,
                             ),
-                            Box::new(move |node, params| match &params[..] {
+                            Box::new(move |node, params, _| match &params[..] {
                                 [TypeKind::Integer(Literal(year)), TypeKind::Integer(Literal(month)), TypeKind::Integer(Literal(day))] => {
                                     (
-                                        TypeKind::Timestamp,
+                                        Ty::new(TypeKind::Timestamp),
                                         if let (Ok(year), Ok(month), Ok(day)) = (
                                             i32::try_from(*year),
                                             u32::try_from(*month),
@@ -520,7 +589,7 @@ pub fn get_globals() -> (
                                         },
                                     )
                                 }
-                                _ => (TypeKind::Timestamp, vec![]),
+                                _ => (Ty::new(TypeKind::Timestamp), vec![]),
                             }),
                         )],
                     ),
@@ -528,11 +597,12 @@ pub fn get_globals() -> (
                         "value",
                         vec![FunctionInterface(
                             (vec![TypeKind::Integer(Unknown)], TypeKind::Timestamp),
-                            Box::new(move |_, _| (TypeKind::Timestamp, vec![])),
+                            Box::new(move |_, _, _| (Ty::new(TypeKind::Timestamp), vec![])),
                         )],
                     ),
                 ]),
             ),
         ]),
-    )
+    );
+    (flow, result)
 }

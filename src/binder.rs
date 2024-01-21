@@ -7,7 +7,7 @@ use crate::{
         RuleGroup, RulesTree, Service,
     },
     symbol::{Bindings, FunctionNodeRef, SymbolID, SymbolReferences, VariableNodeRef},
-    ty::{FunctionInterface, TypeKind},
+    ty::{FunctionInterface, Ty},
 };
 use std::collections::HashMap;
 
@@ -553,7 +553,7 @@ fn bind_rules_tree<'a, 'b>(
 pub fn bind<'a>(
     ast: &'a Ast,
     globals: &'a (
-        HashMap<&'static str, TypeKind>,
+        HashMap<&'static str, Ty>,
         HashMap<&'static str, Vec<FunctionInterface>>,
         HashMap<&'static str, HashMap<&'static str, Vec<FunctionInterface>>>,
     ),

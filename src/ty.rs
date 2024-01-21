@@ -1,3 +1,4 @@
+use nanoid::nanoid;
 use std::{collections::HashMap, fmt::Display, hash::Hash, iter::zip};
 
 use crate::{
@@ -5,6 +6,84 @@ use crate::{
     checker::TypeCheckResult,
     orany::OrAny,
 };
+
+pub type Flow = HashMap<TypeID, Ty>;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TypeID(pub String);
+
+impl TypeID {
+    pub fn new() -> TypeID {
+        TypeID(nanoid!())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Ty {
+    Type(TypeID, TypeKind),
+    FlowType(TypeID),
+}
+
+impl Ty {
+    pub fn new(kind: TypeKind) -> Ty {
+        Ty::Type(TypeID::new(), kind)
+    }
+
+    pub fn kind<'a>(&'a self, flow: &'a Flow) -> &TypeKind {
+        match self {
+            Ty::Type(_, kind) => kind,
+            Ty::FlowType(id) => flow.get(id).unwrap().kind(flow),
+        }
+    }
+
+    pub fn get_type_mut<'a>(&'a mut self) -> Option<&'a mut TypeKind> {
+        match self {
+            Ty::Type(_, kind) => Some(kind),
+            Ty::FlowType(_) => None,
+        }
+    }
+
+    pub fn can_be(&self, other: &Self, flow: &Flow) -> OrAny {
+        self.kind(flow).can_be(&other.kind(flow), flow)
+    }
+
+    #[allow(dead_code)]
+    pub fn min(left: &Self, right: &Self, flow: &Flow) -> Self {
+        left.can_be(right, flow)
+            .and_then(|result| {
+                if result {
+                    Some(left.clone())
+                } else {
+                    right.can_be(left, flow).and_then(|result| {
+                        if result {
+                            Some(right.clone())
+                        } else {
+                            None
+                        }
+                    })
+                }
+            })
+            .unwrap_or(Ty::new(TypeKind::Any))
+    }
+
+    pub fn max(left: &Self, right: &Self, flow: &Flow) -> Self {
+        left.can_be(right, flow)
+            .and_then(|result| {
+                if result {
+                    Some(right.clone())
+                } else {
+                    right.can_be(left, flow).and_then(|result| {
+                        if result {
+                            Some(left.clone())
+                        } else {
+                            None
+                        }
+                    })
+                }
+            })
+            .unwrap_or(Ty::new(TypeKind::Any))
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum TypeKind {
@@ -22,26 +101,26 @@ pub enum TypeKind {
     Path(MayLiteral<String>),
     PathTemplateUnBound(MayLiteral<Vec<String>>),
     PathTemplateBound(MayLiteral<Vec<String>>),
-    Set(MayLiteral<Box<TypeKind>>),
+    Set(MayLiteral<Box<Ty>>),
     String(MayLiteral<String>),
     Timestamp,
 }
 
 #[derive(Debug, Clone)]
 pub enum ListLiteral {
-    Single(Box<TypeKind>),
-    Tuple(Vec<TypeKind>),
+    Single(Box<Ty>),
+    Tuple(Vec<Ty>),
 }
 
 impl ListLiteral {
-    pub fn max(&self) -> TypeKind {
+    pub fn max(&self, flow: &Flow) -> Ty {
         match self {
             ListLiteral::Single(ty) => *ty.clone(),
             ListLiteral::Tuple(tuple) => tuple
                 .clone()
                 .into_iter()
-                .reduce(|left, right| TypeKind::max(&left, &right))
-                .unwrap_or(TypeKind::Any)
+                .reduce(|left, right| Ty::max(&left, &right, flow))
+                .unwrap_or(Ty::new(TypeKind::Any))
                 .clone(),
         }
     }
@@ -49,8 +128,8 @@ impl ListLiteral {
 
 #[derive(Debug, Clone)]
 pub struct MapLiteral {
-    pub literals: HashMap<String, TypeKind>,
-    pub default: Option<Box<TypeKind>>,
+    pub literals: HashMap<String, Ty>,
+    pub default: Option<Box<Ty>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -113,9 +192,9 @@ impl TypeKind {
         }
     }
 
-    pub fn is_type_coercion_to(&self, target: &Self) -> OrAny {
+    pub fn is_type_coercion_to(&self, target: &Self, flow: &Flow) -> OrAny {
         OrAny::any(self.get_coercion_list().iter(), |candidate| {
-            candidate.can_be(target)
+            candidate.can_be(target, flow)
         })
     }
 
@@ -146,7 +225,7 @@ impl TypeKind {
     /// subtyping
     ///
     /// return None if Any
-    pub fn can_be(&self, other: &Self) -> OrAny {
+    pub fn can_be(&self, other: &Self, flow: &Flow) -> OrAny {
         (match (self, other) {
             (TypeKind::Any, _) => OrAny::Any,
             (_, TypeKind::Any) => OrAny::Any,
@@ -159,14 +238,16 @@ impl TypeKind {
             (TypeKind::LatLng, TypeKind::LatLng) => OrAny::Bool(true),
             (TypeKind::List(left), TypeKind::List(right)) => {
                 left.can_be_by(right, |left, right| match (left, right) {
-                    (ListLiteral::Single(left), ListLiteral::Single(right)) => left.can_be(right),
+                    (ListLiteral::Single(left), ListLiteral::Single(right)) => {
+                        left.can_be(right, flow)
+                    }
                     (ListLiteral::Single(_), ListLiteral::Tuple(_)) => OrAny::Bool(false),
                     (ListLiteral::Tuple(left), ListLiteral::Single(right)) => {
-                        OrAny::all(left.iter(), |item| item.can_be(right))
+                        OrAny::all(left.iter(), |item| item.can_be(right, flow))
                     }
                     (ListLiteral::Tuple(left), ListLiteral::Tuple(right)) => {
                         if left.len() == right.len() {
-                            OrAny::all(zip(left, right), |(left, right)| left.can_be(right))
+                            OrAny::all(zip(left, right), |(left, right)| left.can_be(right, flow))
                         } else {
                             OrAny::Bool(false)
                         }
@@ -176,7 +257,7 @@ impl TypeKind {
             (TypeKind::Map(left), TypeKind::Map(right)) => left.can_be_by(right, |left, right| {
                 OrAny::all(right.literals.iter(), |(right_key, right_value)| {
                     if let Some(left_value) = left.literals.get(right_key) {
-                        left_value.can_be(right_value)
+                        left_value.can_be(right_value, flow)
                     } else {
                         OrAny::Bool(false)
                     }
@@ -184,7 +265,7 @@ impl TypeKind {
                 .and(|| match &right.default {
                     None => OrAny::Bool(true),
                     Some(right_default_ty) => (if let Some(left_default_ty) = &left.default {
-                        left_default_ty.can_be(&right_default_ty)
+                        left_default_ty.can_be(&right_default_ty, flow)
                     } else {
                         OrAny::Bool(false)
                     })
@@ -193,7 +274,7 @@ impl TypeKind {
                             left.literals
                                 .iter()
                                 .filter(|(key, _)| !right.literals.contains_key(*key)),
-                            |(_, value)| value.can_be(&right_default_ty),
+                            |(_, value)| value.can_be(&right_default_ty, flow),
                         )
                     }),
                 })
@@ -202,12 +283,12 @@ impl TypeKind {
                 .0
                 .can_be_by(&right.0, |left, right| {
                     TypeKind::Map(MayLiteral::Literal(left.clone()))
-                        .can_be(&TypeKind::Map(MayLiteral::Literal(right.clone())))
+                        .can_be(&TypeKind::Map(MayLiteral::Literal(right.clone())), flow)
                 })
                 .and(|| {
                     left.1.can_be_by(&right.1, |left, right| {
                         TypeKind::Map(MayLiteral::Literal(left.clone()))
-                            .can_be(&TypeKind::Map(MayLiteral::Literal(right.clone())))
+                            .can_be(&TypeKind::Map(MayLiteral::Literal(right.clone())), flow)
                     })
                 }),
             (TypeKind::Path(left), TypeKind::Path(right)) => OrAny::Bool(left.can_be(right)),
@@ -218,39 +299,47 @@ impl TypeKind {
                 OrAny::Bool(left.can_be(right))
             }
             (TypeKind::Set(left), TypeKind::Set(right)) => {
-                left.can_be_by(right, |left, right| left.can_be(right))
+                left.can_be_by(right, |left, right| left.can_be(right, flow))
             }
             (TypeKind::String(left), TypeKind::String(right)) => OrAny::Bool(left.can_be(right)),
             (TypeKind::Timestamp, TypeKind::Timestamp) => OrAny::Bool(true),
             _ => OrAny::Bool(false),
         })
-        .or(|| self.is_type_coercion_to(other))
+        .or(|| self.is_type_coercion_to(other, flow))
     }
 
     #[allow(dead_code)]
-    pub fn min(left: &Self, right: &Self) -> Self {
-        left.can_be(right)
+    pub fn min(left: &Self, right: &Self, flow: &Flow) -> Self {
+        left.can_be(right, flow)
             .and_then(|result| {
                 if result {
                     Some(left.clone())
                 } else {
-                    right
-                        .can_be(left)
-                        .and_then(|result| if result { Some(right.clone()) } else { None })
+                    right.can_be(left, flow).and_then(|result| {
+                        if result {
+                            Some(right.clone())
+                        } else {
+                            None
+                        }
+                    })
                 }
             })
             .unwrap_or(TypeKind::Any)
     }
 
-    pub fn max(left: &Self, right: &Self) -> Self {
-        left.can_be(right)
+    pub fn max(left: &Self, right: &Self, flow: &Flow) -> Self {
+        left.can_be(right, flow)
             .and_then(|result| {
                 if result {
                     Some(right.clone())
                 } else {
-                    right
-                        .can_be(left)
-                        .and_then(|result| if result { Some(left.clone()) } else { None })
+                    right.can_be(left, flow).and_then(|result| {
+                        if result {
+                            Some(left.clone())
+                        } else {
+                            None
+                        }
+                    })
                 }
             })
             .unwrap_or(TypeKind::Any)
@@ -308,7 +397,7 @@ pub enum MemberKind {
 
 pub struct FunctionInterface<'a>(
     pub (Vec<TypeKind>, TypeKind),
-    pub Box<dyn Fn(&dyn Node, &Vec<TypeKind>) -> (TypeKind, Vec<TypeCheckResult>) + 'a>,
+    pub Box<dyn Fn(&dyn Node, &Vec<&TypeKind>, &Flow) -> (Ty, Vec<TypeCheckResult>) + 'a>,
 );
 
 impl<'a> std::fmt::Debug for FunctionInterface<'a> {
@@ -323,5 +412,5 @@ impl<'a> std::fmt::Debug for FunctionInterface<'a> {
 #[derive(Debug)]
 pub struct Interface<'a> {
     pub functions: HashMap<FunctionKind, Vec<FunctionInterface<'a>>>,
-    pub members: HashMap<MemberKind, TypeKind>,
+    pub members: HashMap<MemberKind, Ty>,
 }

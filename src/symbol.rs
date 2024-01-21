@@ -2,7 +2,7 @@ use nanoid::nanoid;
 
 use crate::{
     ast::{Argument, Function, LetBinding, Node, NodeID, PathCapture, PathCaptureGroup},
-    ty::{FunctionInterface, TypeKind},
+    ty::{FunctionInterface, Ty},
 };
 use std::collections::HashMap;
 
@@ -12,7 +12,7 @@ pub enum VariableNodeRef<'a> {
     FunctionArgument(&'a Argument),
     PathCapture(&'a PathCapture),
     PathCaptureGroup(&'a PathCaptureGroup),
-    GlobalVariable(&'a TypeKind),
+    GlobalVariable(&'a Ty),
 }
 
 impl<'a> VariableNodeRef<'a> {
