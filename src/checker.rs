@@ -39,10 +39,7 @@ pub struct TypeCheckContext<'a> {
     pub symbol_references: &'a SymbolReferences<'a>,
 }
 
-#[derive(Clone, Debug)]
-pub struct Flow<'a> {
-    pub context: HashMap<&'a NodeID, TypeKind>,
-}
+pub type VariableTypeBindings<'a> = HashMap<&'a NodeID, TypeKind>;
 
 fn check_can_be<'a, 'b>(
     from: &'b TypeKind,
@@ -190,9 +187,12 @@ fn check_function<'a, 'b, 'c>(
     function: &'a Function,
     params: &'b Vec<TypeKind>,
     context: &'a TypeCheckContext<'a>,
-    flow: &'c Flow,
+    variable_type_bindings: &'c VariableTypeBindings,
 ) -> (TypeKind, Vec<TypeCheckResult>) {
     let mut res: Vec<TypeCheckResult> = vec![];
+    let mut variable_type_bindings = variable_type_bindings.clone();
+
+    // args
     if function.arguments.len() != params.len() {
         res.push(TypeCheckResult::new(
             caller,
@@ -204,18 +204,33 @@ fn check_function<'a, 'b, 'c>(
             .into(),
         ))
     }
-    let mut flow = flow.clone();
     for (arg, param) in zip(&function.arguments, params) {
-        flow.context.insert(&arg.id, param.clone());
+        variable_type_bindings.insert(&arg.id, param.clone());
     }
-    let (return_ty, return_res) = check_expression(&function.return_expression, context, &flow);
-    (return_ty, [res, return_res].concat())
+
+    // let bindings
+    for let_binding in &function.let_bindings {
+        let (let_ty, let_result) =
+            check_expression(&let_binding.expression, context, &variable_type_bindings);
+        variable_type_bindings.insert(&let_binding.id, let_ty.clone());
+        res.extend(let_result);
+    }
+
+    // return expression
+    let (return_ty, return_res) = check_expression(
+        &function.return_expression,
+        context,
+        &variable_type_bindings,
+    );
+    res.extend(return_res);
+
+    (return_ty, res)
 }
 
 fn check_expression<'a, 'b>(
     expr: &'a Expression,
     context: &'a TypeCheckContext<'a>,
-    flow: &'b Flow,
+    variable_type_bindings: &'b VariableTypeBindings,
 ) -> (TypeKind, Vec<TypeCheckResult>) {
     match &expr.kind {
         ExpressionKind::Literal(Literal::Bool(b)) => {
@@ -237,7 +252,8 @@ fn check_expression<'a, 'b>(
                     items
                         .iter()
                         .map(|item| {
-                            let (item_ty, item_res) = check_expression(item, context, flow);
+                            let (item_ty, item_res) =
+                                check_expression(item, context, variable_type_bindings);
                             result.extend(item_res);
                             item_ty
                         })
@@ -249,7 +265,12 @@ fn check_expression<'a, 'b>(
         ExpressionKind::Literal(Literal::Map(entries)) => {
             let (entries_type, entries_result) = entries
                 .iter()
-                .map(|(key, value)| (key, check_expression(value, context, flow)))
+                .map(|(key, value)| {
+                    (
+                        key,
+                        check_expression(value, context, variable_type_bindings),
+                    )
+                })
                 .fold(
                     (HashMap::new(), Vec::<TypeCheckResult>::new()),
                     |(mut entries_type, entries_result), (key, (value_ty, value_result))| {
@@ -271,7 +292,8 @@ fn check_expression<'a, 'b>(
                 Result::Ok(MayLiteral::Literal("".to_owned())),
                 |mut acc: Result<MayLiteral<String>, Vec<String>>, arg| match arg {
                     PathLiteral::PathExpressionSubstitution(arg_expr) => {
-                        let (arg_type, arg_result) = check_expression(&arg_expr, context, flow);
+                        let (arg_type, arg_result) =
+                            check_expression(&arg_expr, context, variable_type_bindings);
                         let (_, check_result) = check_can_be(
                             &arg_type,
                             &TypeKind::String(MayLiteral::Unknown),
@@ -324,12 +346,14 @@ fn check_expression<'a, 'b>(
             .get(&expr.id)
             .and_then(|node| Some(node.1))
         {
-            Some(VariableNodeRef::LetBinding(node)) => {
-                check_expression(&node.expression, context, flow)
-            }
-            Some(VariableNodeRef::FunctionArgument(arg)) => {
-                (flow.context.get(&arg.id).unwrap().clone(), vec![])
-            }
+            Some(VariableNodeRef::LetBinding(node)) => (
+                (*variable_type_bindings.get(&node.id).unwrap()).clone(),
+                vec![],
+            ),
+            Some(VariableNodeRef::FunctionArgument(arg)) => (
+                (*variable_type_bindings.get(&arg.id).unwrap()).clone(),
+                vec![],
+            ),
             Some(VariableNodeRef::PathCapture(_)) => {
                 (TypeKind::String(MayLiteral::Unknown), vec![])
             }
@@ -340,7 +364,7 @@ fn check_expression<'a, 'b>(
             None => (TypeKind::Any, vec![]),
         },
         ExpressionKind::UnaryOperation(literal, op_expr) => {
-            let (op_ty, op_res) = check_expression(&op_expr, context, flow);
+            let (op_ty, op_res) = check_expression(&op_expr, context, variable_type_bindings);
             let (return_ty, return_res) = check_interface_function_calling(
                 expr,
                 context,
@@ -351,8 +375,9 @@ fn check_expression<'a, 'b>(
             (return_ty, [op_res, return_res].concat())
         }
         ExpressionKind::BinaryOperation(literal, left_expr, right_expr) => {
-            let (left_ty, left_res) = check_expression(&left_expr, context, flow);
-            let (right_ty, right_res) = check_expression(&right_expr, context, flow);
+            let (left_ty, left_res) = check_expression(&left_expr, context, variable_type_bindings);
+            let (right_ty, right_res) =
+                check_expression(&right_expr, context, variable_type_bindings);
             let (return_ty, return_res) = if *literal == BinaryLiteral::In {
                 check_interface_function_calling(
                     expr,
@@ -373,15 +398,17 @@ fn check_expression<'a, 'b>(
             (return_ty, [left_res, right_res, return_res].concat())
         }
         ExpressionKind::TernaryOperation(cond_expr, true_expr, false_expr) => {
-            let (cond_ty, mut cond_res) = check_expression(&cond_expr, context, flow);
+            let (cond_ty, mut cond_res) =
+                check_expression(&cond_expr, context, variable_type_bindings);
             let (_, res_assert) = check_can_be(
                 &cond_ty,
                 &TypeKind::Boolean(MayLiteral::Unknown),
                 &cond_expr,
             );
             cond_res.extend(res_assert);
-            let (true_ty, true_res) = check_expression(&true_expr, context, flow);
-            let (false_ty, false_res) = check_expression(&false_expr, context, flow);
+            let (true_ty, true_res) = check_expression(&true_expr, context, variable_type_bindings);
+            let (false_ty, false_res) =
+                check_expression(&false_expr, context, variable_type_bindings);
             let result_ty = TypeKind::max(&true_ty, &false_ty);
             (result_ty, [cond_res, true_res, false_res].concat())
         }
@@ -403,7 +430,8 @@ fn check_expression<'a, 'b>(
                 "latlng" => vec![TypeKind::LatLng],
                 _ => vec![TypeKind::Any],
             };
-            let (target_ty, res_1) = check_expression(&target_expr, context, flow);
+            let (target_ty, res_1) =
+                check_expression(&target_expr, context, variable_type_bindings);
             let (bool_ty, res_2) =
                 check_can_be_candidates(&target_ty, type_str_ty_candidates, expr);
             (TypeKind::make_bool_ty(bool_ty), [res_1, res_2].concat())
@@ -411,10 +439,10 @@ fn check_expression<'a, 'b>(
         ExpressionKind::MemberExpression(obj_expr, member_expr) => {
             // check is namespace
             if let Some(_) = context.bindings.function_table.get(&member_expr.id) {
-                return check_expression(&member_expr, context, flow);
+                return check_expression(&member_expr, context, variable_type_bindings);
             }
 
-            let (obj_ty, mut res) = check_expression(&obj_expr, context, flow);
+            let (obj_ty, mut res) = check_expression(&obj_expr, context, variable_type_bindings);
             if obj_ty.is_any() {
                 return (obj_ty, res);
             }
@@ -488,7 +516,9 @@ got: `.{}`",
                     }
                     let (params_ty, params_res) = fn_params_expr
                         .iter()
-                        .map(|param_expr| check_expression(param_expr, context, flow))
+                        .map(|param_expr| {
+                            check_expression(param_expr, context, variable_type_bindings)
+                        })
                         .fold::<(Vec<TypeKind>, Vec<TypeCheckResult>), _>(
                             (vec![], vec![]),
                             |(mut acc_ty_list, acc_res_list), (param_ty, param_res)| {
@@ -515,8 +545,9 @@ got: `.{}`",
             };
         }
         ExpressionKind::SubscriptExpression(obj_expr, subscript_expr) => {
-            let (obj_ty, obj_res) = check_expression(&obj_expr, context, flow);
-            let (subscript_ty, subscript_res) = check_expression(&subscript_expr, context, flow);
+            let (obj_ty, obj_res) = check_expression(&obj_expr, context, variable_type_bindings);
+            let (subscript_ty, subscript_res) =
+                check_expression(&subscript_expr, context, variable_type_bindings);
             let (return_ty, return_res) = check_interface_function_calling(
                 expr,
                 context,
@@ -529,7 +560,12 @@ got: `.{}`",
         ExpressionKind::FunctionCallExpression(fn_name, params_expr) => {
             let (params_ty, params_res) = params_expr
                 .iter()
-                .map(|param_expr| (param_expr, check_expression(param_expr, context, flow)))
+                .map(|param_expr| {
+                    (
+                        param_expr,
+                        check_expression(param_expr, context, variable_type_bindings),
+                    )
+                })
                 .fold::<(Vec<TypeKind>, Vec<TypeCheckResult>), _>(
                     (vec![], vec![]),
                     |(mut acc_ty_list, acc_res_list), (_param_expr, (param_ty, param_res))| {
@@ -546,7 +582,7 @@ got: `.{}`",
             {
                 Some(FunctionNodeRef::Function(node)) => {
                     let (return_ty, return_res) =
-                        check_function(expr, node, &params_ty, context, &flow);
+                        check_function(expr, node, &params_ty, context, variable_type_bindings);
                     (return_ty, [params_res, return_res].concat())
                 }
                 Some(FunctionNodeRef::GlobalFunction(function_ty_candidates)) => {
@@ -565,12 +601,11 @@ got: `.{}`",
     }
 }
 
-fn check_rule<'a, 'b>(
-    rule: &'a Rule,
-    context: &'a TypeCheckContext<'a>,
-    flow: &'b Flow,
-) -> Vec<TypeCheckResult> {
-    let (ty, mut result) = check_expression(&rule.condition, context, flow);
+fn check_rule<'a, 'b>(rule: &'a Rule, context: &'a TypeCheckContext<'a>) -> Vec<TypeCheckResult> {
+    let variable_type_bindings = HashMap::new();
+    let (ty, mut result) = check_expression(&rule.condition, context, &variable_type_bindings);
+
+    // check condition is boolean
     let (_, res) = check_can_be(
         &ty,
         &TypeKind::Boolean(MayLiteral::Unknown),
@@ -578,6 +613,7 @@ fn check_rule<'a, 'b>(
     );
     result.extend(res);
 
+    // check condition is always ture/false
     if let Expression {
         id: _,
         span: _,
@@ -605,28 +641,23 @@ fn check_rule<'a, 'b>(
 fn check_rule_group<'a, 'b>(
     rule_group: &'a RuleGroup,
     context: &'a TypeCheckContext<'a>,
-    flow: &'b Flow,
 ) -> Vec<TypeCheckResult> {
     rule_group
         .rules
         .iter()
-        .map(|rule| check_rule(rule, context, flow))
+        .map(|rule| check_rule(rule, context))
         .flatten()
         .chain(
             rule_group
                 .rule_groups
                 .iter()
-                .map(|rule_group| check_rule_group(rule_group, context, flow))
+                .map(|rule_group| check_rule_group(rule_group, context))
                 .flatten(),
         )
         .collect()
 }
 
 pub fn check<'a>(ast: &'a Ast, context: &'a TypeCheckContext<'a>) -> Vec<TypeCheckResult> {
-    let flow = Flow {
-        context: HashMap::new(),
-    };
-
     ast.tree
         .services
         .iter()
@@ -634,7 +665,7 @@ pub fn check<'a>(ast: &'a Ast, context: &'a TypeCheckContext<'a>) -> Vec<TypeChe
             service
                 .rule_groups
                 .iter()
-                .map(|rule_group| check_rule_group(rule_group, context, &flow))
+                .map(|rule_group| check_rule_group(rule_group, context))
                 .flatten()
         })
         .flatten()
