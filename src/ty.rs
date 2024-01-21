@@ -25,8 +25,6 @@ pub enum TypeKind {
     Set(MayLiteral<Box<TypeKind>>),
     String(MayLiteral<String>),
     Timestamp,
-    Request,
-    Resource,
 }
 
 #[derive(Debug, Clone)]
@@ -224,13 +222,12 @@ impl TypeKind {
             }
             (TypeKind::String(left), TypeKind::String(right)) => OrAny::Bool(left.can_be(right)),
             (TypeKind::Timestamp, TypeKind::Timestamp) => OrAny::Bool(true),
-            (TypeKind::Request, TypeKind::Request) => OrAny::Bool(true),
-            (TypeKind::Resource, TypeKind::Resource) => OrAny::Bool(true),
             _ => OrAny::Bool(false),
         })
         .or(|| self.is_type_coercion_to(other))
     }
 
+    #[allow(dead_code)]
     pub fn min(left: &Self, right: &Self) -> Self {
         left.can_be(right)
             .and_then(|result| {
@@ -278,8 +275,6 @@ impl TypeKind {
             TypeKind::Set(_) => TypeKind::Set(MayLiteral::Unknown),
             TypeKind::String(_) => TypeKind::String(MayLiteral::Unknown),
             TypeKind::Timestamp => TypeKind::Timestamp,
-            TypeKind::Request => TypeKind::Request,
-            TypeKind::Resource => TypeKind::Resource,
         }
     }
 }

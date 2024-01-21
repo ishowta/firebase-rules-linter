@@ -4,7 +4,7 @@ use chrono::NaiveDate;
 
 use crate::{
     checker::TypeCheckResult,
-    ty::{FunctionInterface, MayLiteral::*, TypeKind},
+    ty::{FunctionInterface, ListLiteral, MapLiteral, MayLiteral::*, TypeKind},
 };
 
 pub fn get_globals() -> (
@@ -12,10 +12,129 @@ pub fn get_globals() -> (
     HashMap<&'static str, Vec<FunctionInterface<'static>>>,
     HashMap<&'static str, HashMap<&'static str, Vec<FunctionInterface<'static>>>>,
 ) {
+    let resource_ty = TypeKind::Map(Literal(MapLiteral {
+        default: None,
+        literals: HashMap::from([
+            ("data".to_owned(), TypeKind::Map(Unknown)),
+            ("id".to_owned(), TypeKind::String(Unknown)),
+            ("__name__".to_owned(), TypeKind::Path(Unknown)),
+        ]),
+    }));
+    let request_ty = TypeKind::Map(Literal(MapLiteral {
+        default: None,
+        literals: HashMap::from([
+            (
+                "auth".to_owned(),
+                TypeKind::Map(Literal(MapLiteral {
+                    default: None,
+                    literals: HashMap::from([
+                        ("uid".to_owned(), TypeKind::String(Unknown)),
+                        (
+                            "token".to_owned(),
+                            TypeKind::Map(Literal(MapLiteral {
+                                default: None,
+                                literals: HashMap::from([
+                                    ("email".to_owned(), TypeKind::String(Unknown)),
+                                    ("email_verified".to_owned(), TypeKind::Boolean(Unknown)),
+                                    ("phone_number".to_owned(), TypeKind::String(Unknown)),
+                                    ("name".to_owned(), TypeKind::String(Unknown)),
+                                    ("sub".to_owned(), TypeKind::String(Unknown)),
+                                    (
+                                        "firebase".to_owned(),
+                                        TypeKind::Map(Literal(MapLiteral {
+                                            default: None,
+                                            literals: HashMap::from([
+                                                (
+                                                    "identities".to_owned(),
+                                                    TypeKind::Map(Literal(MapLiteral {
+                                                        default: None,
+                                                        literals: HashMap::from([
+                                                            (
+                                                                "email".to_owned(),
+                                                                TypeKind::List(Literal(
+                                                                    ListLiteral::Single(Box::new(
+                                                                        TypeKind::String(Unknown),
+                                                                    )),
+                                                                )),
+                                                            ),
+                                                            (
+                                                                "phone".to_owned(),
+                                                                TypeKind::List(Literal(
+                                                                    ListLiteral::Single(Box::new(
+                                                                        TypeKind::String(Unknown),
+                                                                    )),
+                                                                )),
+                                                            ),
+                                                            (
+                                                                "google.com".to_owned(),
+                                                                TypeKind::List(Literal(
+                                                                    ListLiteral::Single(Box::new(
+                                                                        TypeKind::String(Unknown),
+                                                                    )),
+                                                                )),
+                                                            ),
+                                                            (
+                                                                "facebook.com".to_owned(),
+                                                                TypeKind::List(Literal(
+                                                                    ListLiteral::Single(Box::new(
+                                                                        TypeKind::String(Unknown),
+                                                                    )),
+                                                                )),
+                                                            ),
+                                                            (
+                                                                "github.com".to_owned(),
+                                                                TypeKind::List(Literal(
+                                                                    ListLiteral::Single(Box::new(
+                                                                        TypeKind::String(Unknown),
+                                                                    )),
+                                                                )),
+                                                            ),
+                                                            (
+                                                                "twitter.com".to_owned(),
+                                                                TypeKind::List(Literal(
+                                                                    ListLiteral::Single(Box::new(
+                                                                        TypeKind::String(Unknown),
+                                                                    )),
+                                                                )),
+                                                            ),
+                                                        ]),
+                                                    })),
+                                                ),
+                                                (
+                                                    "sign_in_provider".to_owned(),
+                                                    TypeKind::String(Unknown),
+                                                ),
+                                                ("tenant".to_owned(), TypeKind::String(Unknown)),
+                                            ]),
+                                        })),
+                                    ),
+                                ]),
+                            })),
+                        ),
+                    ]),
+                })),
+            ),
+            ("method".to_owned(), TypeKind::String(Unknown)),
+            ("path".to_owned(), TypeKind::Path(Unknown)),
+            (
+                "query".to_owned(),
+                TypeKind::Map(Literal(MapLiteral {
+                    default: None,
+                    literals: HashMap::from([
+                        ("limit".to_owned(), TypeKind::Integer(Unknown)),
+                        ("offset".to_owned(), TypeKind::Any),
+                        ("orderBy".to_owned(), TypeKind::String(Unknown)),
+                    ]),
+                })),
+            ),
+            ("resource".to_owned(), resource_ty.clone()),
+            ("time".to_owned(), TypeKind::Timestamp),
+        ]),
+    }));
     (
         HashMap::from([
-            ("request", TypeKind::Request),
-            ("resource", TypeKind::Resource),
+            ("request", request_ty.clone()),
+            ("resource", resource_ty.clone()),
         ]),
         HashMap::from([
             (
@@ -45,15 +164,21 @@ pub fn get_globals() -> (
             (
                 "get",
                 vec![FunctionInterface(
-                    (vec![TypeKind::Path(Unknown)], TypeKind::Resource),
-                    Box::new(move |_, _| (TypeKind::Resource, vec![])),
+                    (vec![TypeKind::Path(Unknown)], resource_ty.clone()),
+                    {
+                        let resource_ty = resource_ty.clone();
+                        Box::new(move |_, _| (resource_ty.clone(), vec![]))
+                    },
                 )],
             ),
             (
                 "getAfter",
                 vec![FunctionInterface(
-                    (vec![TypeKind::Path(Unknown)], TypeKind::Resource),
-                    Box::new(move |_, _| (TypeKind::Resource, vec![])),
+                    (vec![TypeKind::Path(Unknown)], resource_ty.clone()),
+                    {
+                        let resource_ty = resource_ty.clone();
+                        Box::new(move |_, _| (resource_ty.clone(), vec![]))
+                    },
                 )],
             ),
             (
