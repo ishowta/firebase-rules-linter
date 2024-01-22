@@ -14,11 +14,12 @@ pub fn get_globals() -> (
         HashMap<&'static str, Vec<FunctionInterface<'static>>>,
         HashMap<&'static str, HashMap<&'static str, Vec<FunctionInterface<'static>>>>,
     ),
+    TypeID
 ) {
     let mut flow: Flow = HashMap::new();
 
     let resource_data_ty_id = TypeID::new();
-    let resource_data_ty = Ty::Type(resource_data_ty_id.clone(), TypeKind::Map(Unknown));
+    let resource_data_ty = Ty::Type(resource_data_ty_id.clone(), TypeKind::Map(Literal(MapLiteral { literals: HashMap::new(), default: None })));
     let resource_ty_id = TypeID::new();
     let resource_ty = Ty::Type(
         resource_ty_id.clone(),
@@ -32,7 +33,7 @@ pub fn get_globals() -> (
         })),
     );
     let request_resource_data_ty_id = TypeID::new();
-    let request_resource_data_ty = Ty::Type(resource_data_ty_id.clone(), TypeKind::Map(Unknown));
+    let request_resource_data_ty = Ty::Type(resource_data_ty_id.clone(), TypeKind::Map(Literal(MapLiteral { literals: HashMap::new(), default: None })));
     let request_resource_ty_id = TypeID::new();
     let request_resource_ty = Ty::Type(
         request_resource_ty_id.clone(),
@@ -604,5 +605,5 @@ pub fn get_globals() -> (
             ),
         ]),
     );
-    (flow, result)
+    (flow, result, request_resource_data_ty_id)
 }

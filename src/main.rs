@@ -25,7 +25,7 @@ fn main() {
 
     // println!("{:#?}", ast);
 
-    let (flow, globals) = get_globals();
+    let (flow, globals, request_resource_data_ty_id) = get_globals();
 
     let (bindings, symbol_references, bind_lint_result) = bind(&ast, &globals);
 
@@ -34,7 +34,12 @@ fn main() {
         symbol_references: &symbol_references,
     };
 
-    let mut type_check_result = check(&ast, &type_check_context, &flow);
+    let mut type_check_result = check(
+        &ast,
+        &type_check_context,
+        &flow,
+        &request_resource_data_ty_id,
+    );
 
     type_check_result.dedup_by(|a, b| a == b);
 
