@@ -1,5 +1,5 @@
 use nanoid::nanoid;
-use std::{collections::HashMap, fmt::Display, hash::Hash, iter::zip};
+use std::{cell::RefCell, collections::HashMap, fmt::Display, hash::Hash, iter::zip};
 
 use crate::{
     ast::{BinaryLiteral, Node, UnaryLiteral},
@@ -29,32 +29,32 @@ impl Ty {
         Ty::Type(TypeID::new(), kind)
     }
 
-    pub fn kind<'a>(&'a self, flow: &'a Flow, polluted: &'a mut bool) -> &TypeKind {
+    pub fn kind<'a>(&'a self, flow: &'a Flow, polluted: &'a RefCell<bool>) -> &TypeKind {
         match self {
             Ty::Type(_, kind) => kind,
             Ty::FlowType(id, poison) => {
                 if *poison {
-                    *polluted = true;
+                    *polluted.borrow_mut() = true;
                 }
                 flow.get(id).unwrap().kind(flow, polluted)
             }
         }
     }
 
-    pub fn get_type_mut<'a>(&'a mut self, polluted: &'a mut bool) -> Option<&'a mut TypeKind> {
+    pub fn get_type_mut<'a>(&'a mut self) -> Option<&'a mut TypeKind> {
         match self {
             Ty::Type(_, kind) => Some(kind),
             Ty::FlowType(_, _) => None,
         }
     }
 
-    pub fn can_be(&self, other: &Self, flow: &Flow, polluted: &mut bool) -> OrAny {
+    pub fn can_be(&self, other: &Self, flow: &Flow, polluted: &RefCell<bool>) -> OrAny {
         self.kind(flow, polluted)
             .can_be(&other.kind(flow, polluted), flow, polluted)
     }
 
     #[allow(dead_code)]
-    pub fn min(left: &Self, right: &Self, flow: &Flow, polluted: &mut bool) -> Self {
+    pub fn min(left: &Self, right: &Self, flow: &Flow, polluted: &RefCell<bool>) -> Self {
         left.can_be(right, flow, polluted)
             .and_then(|result| {
                 if result {
@@ -72,7 +72,7 @@ impl Ty {
             .unwrap_or(Ty::new(TypeKind::Any))
     }
 
-    pub fn max(left: &Self, right: &Self, flow: &Flow, polluted: &mut bool) -> Self {
+    pub fn max(left: &Self, right: &Self, flow: &Flow, polluted: &RefCell<bool>) -> Self {
         left.can_be(right, flow, polluted)
             .and_then(|result| {
                 if result {
@@ -119,7 +119,7 @@ pub enum ListLiteral {
 }
 
 impl ListLiteral {
-    pub fn max(&self, flow: &Flow, polluted: &mut bool) -> Ty {
+    pub fn max(&self, flow: &Flow, polluted: &RefCell<bool>) -> Ty {
         match self {
             ListLiteral::Single(ty) => *ty.clone(),
             ListLiteral::Tuple(tuple) => tuple
@@ -198,7 +198,12 @@ impl TypeKind {
         }
     }
 
-    pub fn is_type_coercion_to(&self, target: &Self, flow: &Flow, polluted: &mut bool) -> OrAny {
+    pub fn is_type_coercion_to(
+        &self,
+        target: &Self,
+        flow: &Flow,
+        polluted: &RefCell<bool>,
+    ) -> OrAny {
         OrAny::any(self.get_coercion_list().iter(), |candidate| {
             candidate.can_be(target, flow, polluted)
         })
@@ -231,7 +236,7 @@ impl TypeKind {
     /// subtyping
     ///
     /// return None if Any
-    pub fn can_be(&self, other: &Self, flow: &Flow, polluted: &mut bool) -> OrAny {
+    pub fn can_be(&self, other: &Self, flow: &Flow, polluted: &RefCell<bool>) -> OrAny {
         (match (self, other) {
             (TypeKind::Any, _) => OrAny::Any,
             (_, TypeKind::Any) => OrAny::Any,
@@ -323,7 +328,7 @@ impl TypeKind {
     }
 
     #[allow(dead_code)]
-    pub fn min(left: &Self, right: &Self, flow: &Flow, polluted: &mut bool) -> Self {
+    pub fn min(left: &Self, right: &Self, flow: &Flow, polluted: &RefCell<bool>) -> Self {
         left.can_be(right, flow, polluted)
             .and_then(|result| {
                 if result {
@@ -341,7 +346,7 @@ impl TypeKind {
             .unwrap_or(TypeKind::Any)
     }
 
-    pub fn max(left: &Self, right: &Self, flow: &Flow, polluted: &mut bool) -> Self {
+    pub fn max(left: &Self, right: &Self, flow: &Flow, polluted: &RefCell<bool>) -> Self {
         left.can_be(right, flow, polluted)
             .and_then(|result| {
                 if result {
@@ -411,7 +416,10 @@ pub enum MemberKind {
 
 pub struct FunctionInterface<'a>(
     pub (Vec<TypeKind>, TypeKind),
-    pub Box<dyn Fn(&dyn Node, &Vec<&TypeKind>, &Flow) -> (Ty, Vec<TypeCheckResult>) + 'a>,
+    pub  Box<
+        dyn Fn(&dyn Node, &Vec<&TypeKind>, &Flow, &RefCell<bool>) -> (Ty, Vec<TypeCheckResult>)
+            + 'a,
+    >,
 );
 
 impl<'a> std::fmt::Debug for FunctionInterface<'a> {
