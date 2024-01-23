@@ -196,7 +196,7 @@ fn check_interface_function_calling<'a>(
                             let new_ty_id = TypeID::new();
                             flow.insert(
                                 new_ty_id.clone(),
-                                Ty::Type(new_ty_id.clone(), TypeKind::Unknown),
+                                Ty::Type(new_ty_id.clone(), TypeKind::Any),
                             );
                             map_literal
                                 .literals
@@ -213,7 +213,7 @@ fn check_interface_function_calling<'a>(
                             let new_ty_id = TypeID::new();
                             flow.insert(
                                 new_ty_id.clone(),
-                                Ty::Type(new_ty_id.clone(), TypeKind::Unknown),
+                                Ty::Type(new_ty_id.clone(), TypeKind::Any),
                             );
                             map_literal
                                 .literals
@@ -1031,8 +1031,8 @@ fn check_expression<'a, 'b>(
                         }
                     }
 
-                    if flow_branch_reverse == false {
-                        if let Ty::FlowType(flow_obj_ty_id, poison) = &obj_ty {
+                    if let Ty::FlowType(flow_obj_ty_id, poison) = &obj_ty {
+                        if flow_branch_reverse == false {
                             if *poison {
                                 *polluted.borrow_mut() = true;
                             }
@@ -1044,7 +1044,7 @@ fn check_expression<'a, 'b>(
                                     let new_ty_id = TypeID::new();
                                     flow.insert(
                                         new_ty_id.clone(),
-                                        Ty::Type(new_ty_id.clone(), TypeKind::Unknown),
+                                        Ty::Type(new_ty_id.clone(), TypeKind::Any),
                                     );
                                     map_literal.literals.insert(
                                         variable_name.clone(),
@@ -1067,7 +1067,7 @@ fn check_expression<'a, 'b>(
                                     let new_ty_id = TypeID::new();
                                     flow.insert(
                                         new_ty_id.clone(),
-                                        Ty::Type(new_ty_id.clone(), TypeKind::Unknown),
+                                        Ty::Type(new_ty_id.clone(), TypeKind::Any),
                                     );
                                     map_literal.literals.insert(
                                         variable_name.clone(),
@@ -1082,6 +1082,8 @@ fn check_expression<'a, 'b>(
                                     return (Ty::FlowType(new_ty_id, on_poisoning), vec![]);
                                 }
                             }
+                        } else {
+                            return (Ty::new(TypeKind::Any), res);
                         }
                     }
 
