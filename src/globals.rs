@@ -33,7 +33,7 @@ pub fn get_globals() -> (
         })),
     );
     let request_resource_data_ty_id = TypeID::new();
-    let request_resource_data_ty = Ty::Type(resource_data_ty_id.clone(), TypeKind::Map(Literal(MapLiteral { literals: HashMap::new(), default: None })));
+    let request_resource_data_ty = Ty::Type(request_resource_data_ty_id.clone(), TypeKind::Map(Literal(MapLiteral { literals: HashMap::new(), default: None })));
     let request_resource_ty_id = TypeID::new();
     let request_resource_ty = Ty::Type(
         request_resource_ty_id.clone(),

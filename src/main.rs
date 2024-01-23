@@ -1,9 +1,9 @@
 use miette::Report;
-use std::fs;
+use std::{collections::HashSet, fs};
 
 use crate::{
     binder::bind,
-    checker::{check, TypeCheckContext},
+    checker::{check, TypeCheckContext, TypeCheckResult},
     globals::get_globals,
     parser::parse,
 };
@@ -34,18 +34,24 @@ fn main() {
         symbol_references: &symbol_references,
     };
 
-    let mut type_check_result = check(
+    let type_check_result = check(
         &ast,
         &type_check_context,
         &flow,
         &request_resource_data_ty_id,
     );
 
-    type_check_result.dedup_by(|a, b| a == b);
+    let mut type_check_result: Vec<&TypeCheckResult> = type_check_result
+        .iter()
+        .collect::<HashSet<&TypeCheckResult>>()
+        .iter()
+        .cloned()
+        .collect();
+    type_check_result.sort_by(|a, b| a.at.offset().cmp(&b.at.offset()));
 
     let results: Vec<Report> = bind_lint_result
         .into_iter()
-        .chain(type_check_result.iter().map(|x| Report::from(x.clone())))
+        .chain(type_check_result.iter().map(|x| Report::from((*x).clone())))
         .collect();
 
     let result_count = results.len();

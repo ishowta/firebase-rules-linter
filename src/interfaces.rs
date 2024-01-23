@@ -28,10 +28,8 @@ impl TypeKind {
         };
 
         match &self {
-            TypeKind::Any => {
-                interface.functions.extend([]);
-                interface.members.extend([]);
-            }
+            TypeKind::Any => {}
+            TypeKind::Unknown => {}
             TypeKind::Null => {
                 interface.functions.extend([
                     (
@@ -891,10 +889,10 @@ impl TypeKind {
                                 .members
                                 .insert(MemberKind::Member(key.clone()), value.clone());
                         }
-                        if left.default.is_some() {
+                        if let Some(default_ty) = &left.default {
                             interface
                                 .members
-                                .insert(MemberKind::AnyMember, Ty::new(TypeKind::Any));
+                                .insert(MemberKind::AnyMember, *default_ty.clone());
                         }
                     }
                     Unknown => {

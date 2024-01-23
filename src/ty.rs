@@ -18,10 +18,21 @@ impl TypeID {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Ty {
     Type(TypeID, TypeKind),
     FlowType(TypeID, bool),
+}
+
+impl std::fmt::Debug for Ty {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Type(_arg0, arg1) => f.debug_tuple("Type").field(arg1).finish(),
+            Self::FlowType(arg0, arg1) => {
+                f.debug_tuple("FlowType").field(arg0).field(arg1).finish()
+            }
+        }
+    }
 }
 
 impl Ty {
@@ -37,6 +48,86 @@ impl Ty {
                     *polluted.borrow_mut() = true;
                 }
                 flow.get(id).unwrap().kind(flow, polluted)
+            }
+        }
+    }
+
+    pub fn expand_for_debug<'a>(&'a self, flow: &'a Flow) -> TypeKind {
+        let _polluted = RefCell::new(false);
+        self.expand(flow, &_polluted)
+    }
+
+    pub fn expand<'a>(&'a self, flow: &'a Flow, polluted: &'a RefCell<bool>) -> TypeKind {
+        match self {
+            Ty::Type(_, kind) => match kind {
+                TypeKind::List(MayLiteral::Literal(ListLiteral::Single(ty))) => {
+                    TypeKind::List(MayLiteral::Literal(ListLiteral::Single(Box::new(Ty::new(
+                        ty.expand(flow, polluted),
+                    )))))
+                }
+                TypeKind::List(MayLiteral::Literal(ListLiteral::Tuple(tuple))) => {
+                    TypeKind::List(MayLiteral::Literal(ListLiteral::Tuple(
+                        tuple
+                            .iter()
+                            .map(|ty| (Ty::new(ty.expand(flow, polluted))))
+                            .collect(),
+                    )))
+                }
+                TypeKind::Map(MayLiteral::Literal(MapLiteral { literals, default })) => {
+                    TypeKind::Map(MayLiteral::Literal(MapLiteral {
+                        literals: literals
+                            .iter()
+                            .map(|(key, ty)| (key.clone(), Ty::new(ty.expand(flow, polluted))))
+                            .collect(),
+                        default: default
+                            .as_ref()
+                            .map(|ty| Box::new(Ty::new(ty.expand(flow, polluted)))),
+                    }))
+                }
+                TypeKind::MapDiff((left, right)) => TypeKind::MapDiff((
+                    match left {
+                        MayLiteral::Unknown => MayLiteral::Unknown,
+                        MayLiteral::Literal(MapLiteral { literals, default }) => {
+                            MayLiteral::Literal(MapLiteral {
+                                literals: literals
+                                    .iter()
+                                    .map(|(key, ty)| {
+                                        (key.clone(), Ty::new(ty.expand(flow, polluted)))
+                                    })
+                                    .collect(),
+                                default: default
+                                    .as_ref()
+                                    .map(|ty| Box::new(Ty::new(ty.expand(flow, polluted)))),
+                            })
+                        }
+                    },
+                    match right {
+                        MayLiteral::Unknown => MayLiteral::Unknown,
+                        MayLiteral::Literal(MapLiteral { literals, default }) => {
+                            MayLiteral::Literal(MapLiteral {
+                                literals: literals
+                                    .iter()
+                                    .map(|(key, ty)| {
+                                        (key.clone(), Ty::new(ty.expand(flow, polluted)))
+                                    })
+                                    .collect(),
+                                default: default
+                                    .as_ref()
+                                    .map(|ty| Box::new(Ty::new(ty.expand(flow, polluted)))),
+                            })
+                        }
+                    },
+                )),
+                TypeKind::Set(MayLiteral::Literal(ty)) => TypeKind::Set(MayLiteral::Literal(
+                    Box::new(Ty::new(ty.expand(flow, polluted))),
+                )),
+                _ => kind.clone(),
+            },
+            Ty::FlowType(id, poison) => {
+                if *poison {
+                    *polluted.borrow_mut() = true;
+                }
+                flow.get(id).unwrap().expand(flow, polluted)
             }
         }
     }
@@ -94,6 +185,7 @@ impl Ty {
 #[derive(Debug, Clone)]
 pub enum TypeKind {
     Any,
+    Unknown,
     Null,
     Boolean(MayLiteral<bool>),
     Bytes(MayLiteral<Vec<u8>>),
@@ -367,6 +459,7 @@ impl TypeKind {
     pub fn erase_literal_constraint(&self) -> TypeKind {
         match self {
             TypeKind::Any => TypeKind::Any,
+            TypeKind::Unknown => TypeKind::Unknown,
             TypeKind::Null => TypeKind::Null,
             TypeKind::Boolean(_) => TypeKind::Boolean(MayLiteral::Unknown),
             TypeKind::Bytes(_) => TypeKind::Bytes(MayLiteral::Unknown),
