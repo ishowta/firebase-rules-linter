@@ -226,9 +226,17 @@ fn check_interface_function_calling<'a>(
                         } else if let TypeKind::Map(MayLiteral::Unknown) =
                             flow_interface_ty.kind(flow, polluted)
                         {
+                            let new_default_ty_id = TypeID::new();
+                            flow.insert(
+                                new_default_ty_id.clone(),
+                                Ty::Type(new_default_ty_id.clone(), TypeKind::Unknown),
+                            );
                             let mut map_literal = MapLiteral {
                                 literals: HashMap::new(),
-                                default: None,
+                                default: Some(Box::new(Ty::FlowType(
+                                    new_default_ty_id,
+                                    on_poisoning,
+                                ))),
                             };
                             let new_ty_id = TypeID::new();
                             flow.insert(
@@ -1002,32 +1010,68 @@ fn check_expression_inner<'a, 'b>(
 
             if !*on_examination && flow_branch_reverse == false {
                 if let Ty::FlowType(flow_type_id, poison) = &target_ty {
-                    if *poison {
-                        *polluted.borrow_mut() = true;
-                    }
-                    let type_str_ty = match &**type_str {
-                        "bool" => TypeKind::Boolean(MayLiteral::Unknown),
-                        "int" => TypeKind::Integer(MayLiteral::Unknown),
-                        "float" => TypeKind::Float(MayLiteral::Unknown),
-                        "number" => TypeKind::Integer(MayLiteral::Unknown),
-                        "string" => TypeKind::String(MayLiteral::Unknown),
-                        "list" => TypeKind::List(MayLiteral::Unknown),
-                        "map" => TypeKind::Map(MayLiteral::Literal(MapLiteral {
-                            literals: HashMap::new(),
-                            default: None,
-                        })),
-                        "timestamp" => TypeKind::Timestamp,
-                        "duration" => TypeKind::Duration,
-                        "path" => TypeKind::Path(MayLiteral::Unknown),
-                        "latlng" => TypeKind::LatLng,
-                        _ => TypeKind::Any,
-                    };
-                    match type_str_ty.can_be(target_ty.kind(flow, polluted), flow, polluted) {
-                        OrAny::Bool(true) => {}
-                        OrAny::Any | OrAny::Bool(false) => {
-                            *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
-                                type_str_ty;
+                    if let TypeKind::Any = target_ty.kind(flow, polluted) {
+                        if *poison {
+                            *polluted.borrow_mut() = true;
                         }
+                        match &**type_str {
+                            "bool" => {
+                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
+                                    TypeKind::Boolean(MayLiteral::Unknown)
+                            }
+                            "int" => {
+                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
+                                    TypeKind::Integer(MayLiteral::Unknown)
+                            }
+                            "float" => {
+                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
+                                    TypeKind::Float(MayLiteral::Unknown)
+                            }
+                            "number" => {
+                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
+                                    TypeKind::Integer(MayLiteral::Unknown)
+                            }
+                            "string" => {
+                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
+                                    TypeKind::String(MayLiteral::Unknown)
+                            }
+                            "list" => {
+                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
+                                    TypeKind::List(MayLiteral::Unknown)
+                            }
+                            "map" => {
+                                let new_default_ty_id = TypeID::new();
+                                flow.insert(
+                                    new_default_ty_id.clone(),
+                                    Ty::Type(new_default_ty_id.clone(), TypeKind::Unknown),
+                                );
+                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
+                                    TypeKind::Map(MayLiteral::Literal(MapLiteral {
+                                        literals: HashMap::new(),
+                                        default: Some(Box::new(Ty::FlowType(
+                                            new_default_ty_id,
+                                            on_poisoning,
+                                        ))),
+                                    }))
+                            }
+                            "timestamp" => {
+                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
+                                    TypeKind::Timestamp
+                            }
+                            "duration" => {
+                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
+                                    TypeKind::Duration
+                            }
+                            "path" => {
+                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
+                                    TypeKind::Path(MayLiteral::Unknown)
+                            }
+                            "latlng" => {
+                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
+                                    TypeKind::LatLng
+                            }
+                            _ => {}
+                        };
                     }
                 }
             }
@@ -1079,9 +1123,9 @@ fn check_expression_inner<'a, 'b>(
 
                     let coercions = obj_ty.kind(flow, polluted).get_coercion_list();
                     // check is interface function
-                    {
+                    let member = {
                         let interfaces = obj_ty.kind(flow, polluted).get_interface(&coercions);
-                        if let Some(member) = interfaces.iter().find_map(|interface| {
+                        interfaces.iter().find_map(|interface| {
                             interface
                                 .members
                                 .iter()
@@ -1095,75 +1139,92 @@ fn check_expression_inner<'a, 'b>(
                                         }
                                     }
                                 })
-                        }) {
-                            if let TypeKind::Boolean(MayLiteral::Literal(bool_literal)) =
-                                member.kind(flow, polluted)
-                            {
-                                return (
-                                    Ty::new(TypeKind::Boolean(MayLiteral::Literal(
-                                        bool_literal ^ flow_branch_reverse,
-                                    ))),
-                                    res,
-                                );
-                            } else {
-                                return (member.clone(), res);
-                            }
-                        }
-                    }
+                        })
+                    };
 
-                    if let Ty::FlowType(flow_obj_ty_id, poison) = &obj_ty {
-                        if flow_branch_reverse == false {
-                            if *poison {
-                                *polluted.borrow_mut() = true;
-                            }
-                            if let Some(flow_obj_ty) = flow.get(&flow_obj_ty_id) {
-                                if let TypeKind::Map(MayLiteral::Literal(map_literal)) =
-                                    flow_obj_ty.kind(flow, polluted)
-                                {
-                                    let mut map_literal = map_literal.clone();
-                                    let new_ty_id = TypeID::new();
-                                    flow.insert(
-                                        new_ty_id.clone(),
-                                        Ty::Type(new_ty_id.clone(), TypeKind::Any),
-                                    );
-                                    map_literal.literals.insert(
-                                        variable_name.clone(),
-                                        Ty::FlowType(new_ty_id.clone(), on_poisoning),
-                                    );
-                                    *flow
-                                        .get_mut(&flow_obj_ty_id)
-                                        .unwrap()
-                                        .get_type_mut()
-                                        .unwrap() = TypeKind::Map(MayLiteral::Literal(map_literal));
+                    if let Some(member) = member {
+                        if let TypeKind::Unknown = member.kind(flow, polluted) {
+                            if let Ty::FlowType(flow_obj_ty_id, poison) = &obj_ty {
+                                if flow_branch_reverse == false {
+                                    if *poison {
+                                        *polluted.borrow_mut() = true;
+                                    }
+                                    if let Some(flow_obj_ty) = flow.get(&flow_obj_ty_id) {
+                                        if let TypeKind::Map(MayLiteral::Literal(map_literal)) =
+                                            flow_obj_ty.kind(flow, polluted)
+                                        {
+                                            let mut map_literal = map_literal.clone();
+                                            let new_ty_id = TypeID::new();
+                                            flow.insert(
+                                                new_ty_id.clone(),
+                                                Ty::Type(new_ty_id.clone(), TypeKind::Any),
+                                            );
+                                            map_literal.literals.insert(
+                                                variable_name.clone(),
+                                                Ty::FlowType(new_ty_id.clone(), on_poisoning),
+                                            );
+                                            *flow
+                                                .get_mut(&flow_obj_ty_id)
+                                                .unwrap()
+                                                .get_type_mut()
+                                                .unwrap() =
+                                                TypeKind::Map(MayLiteral::Literal(map_literal));
 
-                                    return (Ty::FlowType(new_ty_id, on_poisoning), vec![]);
-                                } else if let TypeKind::Map(MayLiteral::Unknown) =
-                                    flow_obj_ty.kind(flow, polluted)
-                                {
-                                    let mut map_literal = MapLiteral {
-                                        literals: HashMap::new(),
-                                        default: None,
-                                    };
-                                    let new_ty_id = TypeID::new();
-                                    flow.insert(
-                                        new_ty_id.clone(),
-                                        Ty::Type(new_ty_id.clone(), TypeKind::Any),
-                                    );
-                                    map_literal.literals.insert(
-                                        variable_name.clone(),
-                                        Ty::FlowType(new_ty_id.clone(), on_poisoning),
-                                    );
-                                    *flow
-                                        .get_mut(&flow_obj_ty_id)
-                                        .unwrap()
-                                        .get_type_mut()
-                                        .unwrap() = TypeKind::Map(MayLiteral::Literal(map_literal));
+                                            return (Ty::FlowType(new_ty_id, on_poisoning), vec![]);
+                                        } else if let TypeKind::Map(MayLiteral::Unknown) =
+                                            flow_obj_ty.kind(flow, polluted)
+                                        {
+                                            let new_default_ty_id = TypeID::new();
+                                            flow.insert(
+                                                new_default_ty_id.clone(),
+                                                Ty::Type(
+                                                    new_default_ty_id.clone(),
+                                                    TypeKind::Unknown,
+                                                ),
+                                            );
+                                            let mut map_literal = MapLiteral {
+                                                literals: HashMap::new(),
+                                                default: Some(Box::new(Ty::FlowType(
+                                                    new_default_ty_id,
+                                                    on_poisoning,
+                                                ))),
+                                            };
+                                            let new_ty_id = TypeID::new();
+                                            flow.insert(
+                                                new_ty_id.clone(),
+                                                Ty::Type(new_ty_id.clone(), TypeKind::Any),
+                                            );
+                                            map_literal.literals.insert(
+                                                variable_name.clone(),
+                                                Ty::FlowType(new_ty_id.clone(), on_poisoning),
+                                            );
+                                            *flow
+                                                .get_mut(&flow_obj_ty_id)
+                                                .unwrap()
+                                                .get_type_mut()
+                                                .unwrap() =
+                                                TypeKind::Map(MayLiteral::Literal(map_literal));
 
-                                    return (Ty::FlowType(new_ty_id, on_poisoning), vec![]);
+                                            return (Ty::FlowType(new_ty_id, on_poisoning), vec![]);
+                                        }
+                                    }
+                                } else {
+                                    return (Ty::new(TypeKind::Any), res);
                                 }
                             }
+                        }
+
+                        if let TypeKind::Boolean(MayLiteral::Literal(bool_literal)) =
+                            member.kind(flow, polluted)
+                        {
+                            return (
+                                Ty::new(TypeKind::Boolean(MayLiteral::Literal(
+                                    bool_literal ^ flow_branch_reverse,
+                                ))),
+                                res,
+                            );
                         } else {
-                            return (Ty::new(TypeKind::Any), res);
+                            return (member.clone(), res);
                         }
                     }
 

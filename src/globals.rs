@@ -14,33 +14,64 @@ pub fn get_globals() -> (
         HashMap<&'static str, Vec<FunctionInterface<'static>>>,
         HashMap<&'static str, HashMap<&'static str, Vec<FunctionInterface<'static>>>>,
     ),
-    TypeID
+    TypeID,
 ) {
     let mut flow: Flow = HashMap::new();
 
+    let resource_data_default_ty_id = TypeID::new();
+    let resource_data_default_ty = Ty::Type(resource_data_default_ty_id.clone(), TypeKind::Unknown);
     let resource_data_ty_id = TypeID::new();
-    let resource_data_ty = Ty::Type(resource_data_ty_id.clone(), TypeKind::Map(Literal(MapLiteral { literals: HashMap::new(), default: None })));
+    let resource_data_ty = Ty::Type(
+        resource_data_ty_id.clone(),
+        TypeKind::Map(Literal(MapLiteral {
+            literals: HashMap::new(),
+            default: Some(Box::new(Ty::FlowType(
+                resource_data_default_ty_id.clone(),
+                false,
+            ))),
+        })),
+    );
     let resource_ty_id = TypeID::new();
     let resource_ty = Ty::Type(
         resource_ty_id.clone(),
         TypeKind::Map(Literal(MapLiteral {
             default: None,
             literals: HashMap::from([
-                ("data".to_owned(), Ty::FlowType(resource_data_ty_id.clone(), false)),
+                (
+                    "data".to_owned(),
+                    Ty::FlowType(resource_data_ty_id.clone(), false),
+                ),
                 ("id".to_owned(), Ty::new(TypeKind::String(Unknown))),
                 ("__name__".to_owned(), Ty::new(TypeKind::Path(Unknown))),
             ]),
         })),
     );
+    let request_resource_data_default_ty_id = TypeID::new();
+    let request_resource_data_default_ty = Ty::Type(
+        request_resource_data_default_ty_id.clone(),
+        TypeKind::Unknown,
+    );
     let request_resource_data_ty_id = TypeID::new();
-    let request_resource_data_ty = Ty::Type(request_resource_data_ty_id.clone(), TypeKind::Map(Literal(MapLiteral { literals: HashMap::new(), default: None })));
+    let request_resource_data_ty = Ty::Type(
+        request_resource_data_ty_id.clone(),
+        TypeKind::Map(Literal(MapLiteral {
+            literals: HashMap::new(),
+            default: Some(Box::new(Ty::FlowType(
+                request_resource_data_default_ty_id.clone(),
+                false,
+            ))),
+        })),
+    );
     let request_resource_ty_id = TypeID::new();
     let request_resource_ty = Ty::Type(
         request_resource_ty_id.clone(),
         TypeKind::Map(Literal(MapLiteral {
             default: None,
             literals: HashMap::from([
-                ("data".to_owned(), Ty::FlowType(request_resource_data_ty_id.clone(), false)),
+                (
+                    "data".to_owned(),
+                    Ty::FlowType(request_resource_data_ty_id.clone(), false),
+                ),
                 ("id".to_owned(), Ty::new(TypeKind::String(Unknown))),
                 ("__name__".to_owned(), Ty::new(TypeKind::Path(Unknown))),
             ]),
@@ -167,9 +198,17 @@ pub fn get_globals() -> (
             ("time".to_owned(), Ty::new(TypeKind::Timestamp)),
         ]),
     })));
+    flow.insert(resource_data_default_ty_id.clone(), resource_data_default_ty);
     flow.insert(resource_data_ty_id.clone(), resource_data_ty);
     flow.insert(resource_ty_id.clone(), resource_ty);
-    flow.insert(request_resource_data_ty_id.clone(), request_resource_data_ty);
+    flow.insert(
+        request_resource_data_default_ty_id.clone(),
+        request_resource_data_default_ty,
+    );
+    flow.insert(
+        request_resource_data_ty_id.clone(),
+        request_resource_data_ty,
+    );
     flow.insert(request_resource_ty_id.clone(), request_resource_ty);
     flow.insert(request_ty_id.clone(), request_ty);
 
@@ -191,7 +230,7 @@ pub fn get_globals() -> (
                 "debug",
                 vec![FunctionInterface(
                     (vec![TypeKind::Any], TypeKind::Any),
-                    Box::new(move |_, params, _,_| match &params[..] {
+                    Box::new(move |_, params, _, _| match &params[..] {
                         // TODO
                         [ty] => (Ty::new((**ty).clone()), vec![]),
                         _ => (Ty::new(TypeKind::Any), vec![]),
@@ -202,14 +241,14 @@ pub fn get_globals() -> (
                 "exists",
                 vec![FunctionInterface(
                     (vec![TypeKind::Path(Unknown)], TypeKind::Boolean(Unknown)),
-                    Box::new(move |_, _, _,_| (Ty::new(TypeKind::Boolean(Unknown)), vec![])),
+                    Box::new(move |_, _, _, _| (Ty::new(TypeKind::Boolean(Unknown)), vec![])),
                 )],
             ),
             (
                 "existsAfter",
                 vec![FunctionInterface(
                     (vec![TypeKind::Path(Unknown)], TypeKind::Boolean(Unknown)),
-                    Box::new(move |_, _, _,_| (Ty::new(TypeKind::Boolean(Unknown)), vec![])),
+                    Box::new(move |_, _, _, _| (Ty::new(TypeKind::Boolean(Unknown)), vec![])),
                 )],
             ),
             (
@@ -218,7 +257,7 @@ pub fn get_globals() -> (
                     (vec![TypeKind::Path(Unknown)], unknown_resource_ty.clone()),
                     {
                         let unknown_resource_ty = unknown_resource_ty.clone();
-                        Box::new(move |_, _, _,_| (Ty::new(unknown_resource_ty.clone()), vec![]))
+                        Box::new(move |_, _, _, _| (Ty::new(unknown_resource_ty.clone()), vec![]))
                     },
                 )],
             ),
@@ -228,7 +267,7 @@ pub fn get_globals() -> (
                     (vec![TypeKind::Path(Unknown)], unknown_resource_ty.clone()),
                     {
                         let unknown_resource_ty = unknown_resource_ty.clone();
-                        Box::new(move |_, _, _,_| (Ty::new(unknown_resource_ty.clone()), vec![]))
+                        Box::new(move |_, _, _, _| (Ty::new(unknown_resource_ty.clone()), vec![]))
                     },
                 )],
             ),
@@ -237,15 +276,15 @@ pub fn get_globals() -> (
                 vec![
                     FunctionInterface(
                         (vec![TypeKind::String(Unknown)], TypeKind::Float(Unknown)),
-                        Box::new(move |_, _, _,_| (Ty::new(TypeKind::Float(Unknown)), vec![])),
+                        Box::new(move |_, _, _, _| (Ty::new(TypeKind::Float(Unknown)), vec![])),
                     ),
                     FunctionInterface(
                         (vec![TypeKind::Integer(Unknown)], TypeKind::Float(Unknown)),
-                        Box::new(move |_, _, _,_| (Ty::new(TypeKind::Float(Unknown)), vec![])),
+                        Box::new(move |_, _, _, _| (Ty::new(TypeKind::Float(Unknown)), vec![])),
                     ),
                     FunctionInterface(
                         (vec![TypeKind::Float(Unknown)], TypeKind::Float(Unknown)),
-                        Box::new(move |_, _, _,_| (Ty::new(TypeKind::Float(Unknown)), vec![])),
+                        Box::new(move |_, _, _, _| (Ty::new(TypeKind::Float(Unknown)), vec![])),
                     ),
                 ],
             ),
@@ -254,15 +293,15 @@ pub fn get_globals() -> (
                 vec![
                     FunctionInterface(
                         (vec![TypeKind::String(Unknown)], TypeKind::Integer(Unknown)),
-                        Box::new(move |_, _, _,_| (Ty::new(TypeKind::Integer(Unknown)), vec![])),
+                        Box::new(move |_, _, _, _| (Ty::new(TypeKind::Integer(Unknown)), vec![])),
                     ),
                     FunctionInterface(
                         (vec![TypeKind::Integer(Unknown)], TypeKind::Integer(Unknown)),
-                        Box::new(move |_, _, _,_| (Ty::new(TypeKind::Integer(Unknown)), vec![])),
+                        Box::new(move |_, _, _, _| (Ty::new(TypeKind::Integer(Unknown)), vec![])),
                     ),
                     FunctionInterface(
                         (vec![TypeKind::Float(Unknown)], TypeKind::Integer(Unknown)),
-                        Box::new(move |_, _, _,_| (Ty::new(TypeKind::Integer(Unknown)), vec![])),
+                        Box::new(move |_, _, _, _| (Ty::new(TypeKind::Integer(Unknown)), vec![])),
                     ),
                 ],
             ),
@@ -271,22 +310,22 @@ pub fn get_globals() -> (
                 vec![
                     FunctionInterface(
                         (vec![TypeKind::Boolean(Unknown)], TypeKind::String(Unknown)),
-                        Box::new(move |_, _, _,_| (Ty::new(TypeKind::String(Unknown)), vec![])),
+                        Box::new(move |_, _, _, _| (Ty::new(TypeKind::String(Unknown)), vec![])),
                     ),
                     FunctionInterface(
                         (vec![TypeKind::Integer(Unknown)], TypeKind::String(Unknown)),
-                        Box::new(move |_, _, _,_| (Ty::new(TypeKind::String(Unknown)), vec![])),
+                        Box::new(move |_, _, _, _| (Ty::new(TypeKind::String(Unknown)), vec![])),
                     ),
                     FunctionInterface(
                         (vec![TypeKind::Float(Unknown)], TypeKind::String(Unknown)),
-                        Box::new(move |_, _, _,_| (Ty::new(TypeKind::String(Unknown)), vec![])),
+                        Box::new(move |_, _, _, _| (Ty::new(TypeKind::String(Unknown)), vec![])),
                     ),
                     FunctionInterface(
                         (
                             vec![TypeKind::Null],
                             TypeKind::String(Literal("null".to_owned())),
                         ),
-                        Box::new(move |_, _, _,_| {
+                        Box::new(move |_, _, _, _| {
                             (
                                 Ty::new(TypeKind::String(Literal("null".to_owned()))),
                                 vec![],
@@ -295,11 +334,11 @@ pub fn get_globals() -> (
                     ),
                     FunctionInterface(
                         (vec![TypeKind::String(Unknown)], TypeKind::String(Unknown)),
-                        Box::new(move |_, _, _,_| (Ty::new(TypeKind::String(Unknown)), vec![])),
+                        Box::new(move |_, _, _, _| (Ty::new(TypeKind::String(Unknown)), vec![])),
                     ),
                     FunctionInterface(
                         (vec![TypeKind::Path(Unknown)], TypeKind::String(Unknown)),
-                        Box::new(move |_, params, _,_| match &params[..] {
+                        Box::new(move |_, params, _, _| match &params[..] {
                             [TypeKind::Path(Literal(str))] => {
                                 (Ty::new(TypeKind::String(Literal(str.clone()))), vec![])
                             }
@@ -311,7 +350,7 @@ pub fn get_globals() -> (
                             vec![TypeKind::PathTemplateBound(Unknown)],
                             TypeKind::String(Unknown),
                         ),
-                        Box::new(move |_, _, _,_| (Ty::new(TypeKind::String(Unknown)), vec![])),
+                        Box::new(move |_, _, _, _| (Ty::new(TypeKind::String(Unknown)), vec![])),
                     ),
                 ],
             ),
@@ -319,7 +358,7 @@ pub fn get_globals() -> (
                 "path",
                 vec![FunctionInterface(
                     (vec![TypeKind::String(Unknown)], TypeKind::Path(Unknown)),
-                    Box::new(move |_, params, _,_| match &params[..] {
+                    Box::new(move |_, params, _, _| match &params[..] {
                         [TypeKind::String(Literal(str))] => {
                             (Ty::new(TypeKind::Path(Literal(str.clone()))), vec![])
                         }
@@ -336,7 +375,7 @@ pub fn get_globals() -> (
                         "abs",
                         vec![FunctionInterface(
                             (vec![TypeKind::Duration], TypeKind::Duration),
-                            Box::new(move |_, _, _,_| (Ty::new(TypeKind::Duration), vec![])),
+                            Box::new(move |_, _, _, _| (Ty::new(TypeKind::Duration), vec![])),
                         )],
                     ),
                     (
@@ -351,7 +390,7 @@ pub fn get_globals() -> (
                                 ],
                                 TypeKind::Duration,
                             ),
-                            Box::new(move |_, _, _,_| (Ty::new(TypeKind::Duration), vec![])),
+                            Box::new(move |_, _, _, _| (Ty::new(TypeKind::Duration), vec![])),
                         )],
                     ),
                     (
@@ -361,7 +400,7 @@ pub fn get_globals() -> (
                                 vec![TypeKind::Integer(Unknown), TypeKind::String(Unknown)],
                                 TypeKind::Duration,
                             ),
-                            Box::new(move |_, params, _,_| match &params[..] {
+                            Box::new(move |_, params, _, _| match &params[..] {
                                 [TypeKind::String(Literal(str))]
                                     if ["w", "d", "h", "m", "s", "ms", "ns"]
                                         .contains(&(str as &str)) =>
@@ -382,13 +421,13 @@ pub fn get_globals() -> (
                         vec![
                             FunctionInterface(
                                 (vec![TypeKind::Bytes(Unknown)], TypeKind::Bytes(Unknown)),
-                                Box::new(move |_, _, _,_| {
+                                Box::new(move |_, _, _, _| {
                                     (Ty::new(TypeKind::Bytes(Unknown)), vec![])
                                 }),
                             ),
                             FunctionInterface(
                                 (vec![TypeKind::String(Unknown)], TypeKind::Bytes(Unknown)),
-                                Box::new(move |_, _, _,_| {
+                                Box::new(move |_, _, _, _| {
                                     (Ty::new(TypeKind::Bytes(Unknown)), vec![])
                                 }),
                             ),
@@ -399,13 +438,13 @@ pub fn get_globals() -> (
                         vec![
                             FunctionInterface(
                                 (vec![TypeKind::Bytes(Unknown)], TypeKind::Bytes(Unknown)),
-                                Box::new(move |_, _, _,_| {
+                                Box::new(move |_, _, _, _| {
                                     (Ty::new(TypeKind::Bytes(Unknown)), vec![])
                                 }),
                             ),
                             FunctionInterface(
                                 (vec![TypeKind::String(Unknown)], TypeKind::Bytes(Unknown)),
-                                Box::new(move |_, _, _,_| {
+                                Box::new(move |_, _, _, _| {
                                     (Ty::new(TypeKind::Bytes(Unknown)), vec![])
                                 }),
                             ),
@@ -416,13 +455,13 @@ pub fn get_globals() -> (
                         vec![
                             FunctionInterface(
                                 (vec![TypeKind::Bytes(Unknown)], TypeKind::Bytes(Unknown)),
-                                Box::new(move |_, _, _,_| {
+                                Box::new(move |_, _, _, _| {
                                     (Ty::new(TypeKind::Bytes(Unknown)), vec![])
                                 }),
                             ),
                             FunctionInterface(
                                 (vec![TypeKind::String(Unknown)], TypeKind::Bytes(Unknown)),
-                                Box::new(move |_, _, _,_| {
+                                Box::new(move |_, _, _, _| {
                                     (Ty::new(TypeKind::Bytes(Unknown)), vec![])
                                 }),
                             ),
@@ -433,13 +472,13 @@ pub fn get_globals() -> (
                         vec![
                             FunctionInterface(
                                 (vec![TypeKind::Bytes(Unknown)], TypeKind::Bytes(Unknown)),
-                                Box::new(move |_, _, _,_| {
+                                Box::new(move |_, _, _, _| {
                                     (Ty::new(TypeKind::Bytes(Unknown)), vec![])
                                 }),
                             ),
                             FunctionInterface(
                                 (vec![TypeKind::String(Unknown)], TypeKind::Bytes(Unknown)),
-                                Box::new(move |_, _, _,_| {
+                                Box::new(move |_, _, _, _| {
                                     (Ty::new(TypeKind::Bytes(Unknown)), vec![])
                                 }),
                             ),
@@ -456,7 +495,7 @@ pub fn get_globals() -> (
                             vec![TypeKind::Float(Unknown), TypeKind::Float(Unknown)],
                             TypeKind::LatLng,
                         ),
-                        Box::new(move |_, _, _,_| (Ty::new(TypeKind::LatLng), vec![])),
+                        Box::new(move |_, _, _, _| (Ty::new(TypeKind::LatLng), vec![])),
                     )],
                 )]),
             ),
@@ -468,7 +507,7 @@ pub fn get_globals() -> (
                         vec![
                             FunctionInterface(
                                 (vec![TypeKind::Integer(Unknown)], TypeKind::Integer(Unknown)),
-                                Box::new(move |_, params, _,_| match &params[..] {
+                                Box::new(move |_, params, _, _| match &params[..] {
                                     [TypeKind::Integer(Literal(x))] => {
                                         (Ty::new(TypeKind::Integer(Literal(-x))), vec![])
                                     }
@@ -477,7 +516,7 @@ pub fn get_globals() -> (
                             ),
                             FunctionInterface(
                                 (vec![TypeKind::Float(Unknown)], TypeKind::Float(Unknown)),
-                                Box::new(move |_, params, _,_| match &params[..] {
+                                Box::new(move |_, params, _, _| match &params[..] {
                                     [TypeKind::Float(Literal(x))] => {
                                         (Ty::new(TypeKind::Float(Literal(-x))), vec![])
                                     }
@@ -490,7 +529,7 @@ pub fn get_globals() -> (
                         "ceil",
                         vec![FunctionInterface(
                             (vec![TypeKind::Float(Unknown)], TypeKind::Float(Unknown)),
-                            Box::new(move |_, params, _,_| match &params[..] {
+                            Box::new(move |_, params, _, _| match &params[..] {
                                 [TypeKind::Float(Literal(x))] => {
                                     (Ty::new(TypeKind::Float(Literal(f64::ceil(*x)))), vec![])
                                 }
@@ -502,7 +541,7 @@ pub fn get_globals() -> (
                         "floor",
                         vec![FunctionInterface(
                             (vec![TypeKind::Float(Unknown)], TypeKind::Float(Unknown)),
-                            Box::new(move |_, params, _,_| match &params[..] {
+                            Box::new(move |_, params, _, _| match &params[..] {
                                 [TypeKind::Float(Literal(x))] => {
                                     (Ty::new(TypeKind::Float(Literal(f64::floor(*x)))), vec![])
                                 }
@@ -517,7 +556,7 @@ pub fn get_globals() -> (
                                 vec![TypeKind::Float(Unknown), TypeKind::Float(Unknown)],
                                 TypeKind::Float(Unknown),
                             ),
-                            Box::new(move |_, params, _,_| match &params[..] {
+                            Box::new(move |_, params, _, _| match &params[..] {
                                 [TypeKind::Float(Literal(base)), TypeKind::Float(Literal(exp))] => {
                                     (Ty::new(TypeKind::Float(Literal(base.powf(*exp)))), vec![])
                                 }
@@ -529,7 +568,7 @@ pub fn get_globals() -> (
                         "round",
                         vec![FunctionInterface(
                             (vec![TypeKind::Float(Unknown)], TypeKind::Float(Unknown)),
-                            Box::new(move |_, params, _,_| match &params[..] {
+                            Box::new(move |_, params, _, _| match &params[..] {
                                 [TypeKind::Float(Literal(x))] => {
                                     (Ty::new(TypeKind::Float(Literal(f64::round(*x)))), vec![])
                                 }
@@ -541,7 +580,7 @@ pub fn get_globals() -> (
                         "sqrt",
                         vec![FunctionInterface(
                             (vec![TypeKind::Float(Unknown)], TypeKind::Float(Unknown)),
-                            Box::new(move |_, params, _,_| match &params[..] {
+                            Box::new(move |_, params, _, _| match &params[..] {
                                 [TypeKind::Float(Literal(x))] => {
                                     (Ty::new(TypeKind::Float(Literal(f64::sqrt(*x)))), vec![])
                                 }
@@ -598,7 +637,7 @@ pub fn get_globals() -> (
                         "value",
                         vec![FunctionInterface(
                             (vec![TypeKind::Integer(Unknown)], TypeKind::Timestamp),
-                            Box::new(move |_, _, _,_| (Ty::new(TypeKind::Timestamp), vec![])),
+                            Box::new(move |_, _, _, _| (Ty::new(TypeKind::Timestamp), vec![])),
                         )],
                     ),
                 ]),

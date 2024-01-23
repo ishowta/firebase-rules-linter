@@ -29,6 +29,7 @@ impl TypeKind {
 
         match &self {
             TypeKind::Any => {}
+            TypeKind::Unknown => {}
             TypeKind::Null => {
                 interface.functions.extend([
                     (
