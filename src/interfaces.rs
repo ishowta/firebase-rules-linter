@@ -61,6 +61,30 @@ impl TypeKind {
             }
             TypeKind::Boolean(lit) => {
                 interface.functions.extend([
+                    (
+                        FunctionKind::BinaryOp(BinaryLiteral::Eq),
+                        vec![FunctionInterface(
+                            (vec![TypeKind::Boolean(Unknown)], TypeKind::Boolean(Unknown)),
+                            Box::new(move |_, params, _, _| match (lit, &params[..]) {
+                                (Literal(left), [TypeKind::Boolean(Literal(right))]) => {
+                                    (Ty::new(TypeKind::Boolean(Literal(left == right))), vec![])
+                                }
+                                _ => (Ty::new(TypeKind::Boolean(Unknown)), vec![]),
+                            }),
+                        )],
+                    ),
+                    (
+                        FunctionKind::BinaryOp(BinaryLiteral::NotEq),
+                        vec![FunctionInterface(
+                            (vec![TypeKind::Boolean(Unknown)], TypeKind::Boolean(Unknown)),
+                            Box::new(move |_, params, _, _| match (lit, &params[..]) {
+                                (Literal(left), [TypeKind::Boolean(Literal(right))]) => {
+                                    (Ty::new(TypeKind::Boolean(Literal(left != right))), vec![])
+                                }
+                                _ => (Ty::new(TypeKind::Boolean(Unknown)), vec![]),
+                            }),
+                        )],
+                    ),
                     (FunctionKind::BinaryOp(BinaryLiteral::LogicalAnd), {
                         vec![FunctionInterface(
                             (vec![TypeKind::Boolean(Unknown)], TypeKind::Boolean(Unknown)),
@@ -104,6 +128,30 @@ impl TypeKind {
             }
             TypeKind::Bytes(lit) => {
                 interface.functions.extend([
+                    (
+                        FunctionKind::BinaryOp(BinaryLiteral::Eq),
+                        vec![FunctionInterface(
+                            (vec![TypeKind::Bytes(Unknown)], TypeKind::Boolean(Unknown)),
+                            Box::new(move |_, params, _, _| match (lit, &params[..]) {
+                                (Literal(left), [TypeKind::Bytes(Literal(right))]) => {
+                                    (Ty::new(TypeKind::Boolean(Literal(left == right))), vec![])
+                                }
+                                _ => (Ty::new(TypeKind::Boolean(Unknown)), vec![]),
+                            }),
+                        )],
+                    ),
+                    (
+                        FunctionKind::BinaryOp(BinaryLiteral::NotEq),
+                        vec![FunctionInterface(
+                            (vec![TypeKind::Bytes(Unknown)], TypeKind::Boolean(Unknown)),
+                            Box::new(move |_, params, _, _| match (lit, &params[..]) {
+                                (Literal(left), [TypeKind::Bytes(Literal(right))]) => {
+                                    (Ty::new(TypeKind::Boolean(Literal(left != right))), vec![])
+                                }
+                                _ => (Ty::new(TypeKind::Boolean(Unknown)), vec![]),
+                            }),
+                        )],
+                    ),
                     (
                         FunctionKind::Function("size".to_owned()),
                         vec![FunctionInterface(
@@ -150,6 +198,24 @@ impl TypeKind {
             }
             TypeKind::Duration => {
                 interface.functions.extend([
+                    (
+                        FunctionKind::BinaryOp(BinaryLiteral::Eq),
+                        vec![FunctionInterface(
+                            (vec![TypeKind::Duration], TypeKind::Boolean(Unknown)),
+                            Box::new(move |_, _, _, _| {
+                                (Ty::new(TypeKind::Boolean(Unknown)), vec![])
+                            }),
+                        )],
+                    ),
+                    (
+                        FunctionKind::BinaryOp(BinaryLiteral::NotEq),
+                        vec![FunctionInterface(
+                            (vec![TypeKind::Duration], TypeKind::Boolean(Unknown)),
+                            Box::new(move |_, _, _, _| {
+                                (Ty::new(TypeKind::Boolean(Unknown)), vec![])
+                            }),
+                        )],
+                    ),
                     (
                         FunctionKind::Function("nanos".to_owned()),
                         vec![FunctionInterface(
@@ -468,6 +534,24 @@ impl TypeKind {
             TypeKind::LatLng => {
                 interface.functions.extend([
                     (
+                        FunctionKind::BinaryOp(BinaryLiteral::Eq),
+                        vec![FunctionInterface(
+                            (vec![TypeKind::LatLng], TypeKind::Boolean(Unknown)),
+                            Box::new(move |_, _, _, _| {
+                                (Ty::new(TypeKind::Boolean(Unknown)), vec![])
+                            }),
+                        )],
+                    ),
+                    (
+                        FunctionKind::BinaryOp(BinaryLiteral::NotEq),
+                        vec![FunctionInterface(
+                            (vec![TypeKind::LatLng], TypeKind::Boolean(Unknown)),
+                            Box::new(move |_, _, _, _| {
+                                (Ty::new(TypeKind::Boolean(Unknown)), vec![])
+                            }),
+                        )],
+                    ),
+                    (
                         FunctionKind::Function("distance".to_owned()),
                         vec![FunctionInterface(
                             (vec![TypeKind::LatLng], TypeKind::Float(Unknown)),
@@ -505,12 +589,35 @@ impl TypeKind {
                                    OrAny::all(zip(left, right), |(left, right)| left.can_be(right, flow, polluted)).and(
                                     || {
                                        OrAny::all(zip(left, right), |(left, right)| {
-                                            left.can_be(right, flow, polluted)
+                                            right.can_be(left, flow, polluted)
                                         })
                                     },
                                 ))).is_true() =>
                                 {
-                                    (Ty::new(TypeKind::Boolean(Unknown)), vec![])
+                                    (Ty::new(TypeKind::Boolean(Literal(true))), vec![])
+                                }
+                                _ => (Ty::new(TypeKind::Boolean(Unknown)), vec![]),
+                            }),
+                        )],
+                    ),
+                    (
+                        FunctionKind::BinaryOp(BinaryLiteral::NotEq),
+                        vec![FunctionInterface(
+                            (vec![TypeKind::List(Unknown)], TypeKind::Boolean(Unknown)),
+                            Box::new(move |_, params, flow, polluted| match (ty, &params[..]) {
+                                (
+                                    Literal(ListLiteral::Tuple(left)),
+                                    [TypeKind::List(Literal(ListLiteral::Tuple(right)))],
+                                ) if ((
+                                   OrAny::all(zip(left, right), |(left, right)| left.can_be(right, flow, polluted)).and(
+                                    || {
+                                       OrAny::all(zip(left, right), |(left, right)| {
+                                            right.can_be(left, flow, polluted)
+                                        })
+                                    },
+                                ))).is_true() =>
+                                {
+                                    (Ty::new(TypeKind::Boolean(Literal(false))), vec![])
                                 }
                                 _ => (Ty::new(TypeKind::Boolean(Unknown)), vec![]),
                             }),
@@ -905,6 +1012,30 @@ impl TypeKind {
             TypeKind::MapDiff(_) => {
                 interface.functions.extend([
                     (
+                        FunctionKind::BinaryOp(BinaryLiteral::Eq),
+                        vec![FunctionInterface(
+                            (
+                                vec![TypeKind::MapDiff((Unknown, Unknown))],
+                                TypeKind::Boolean(Unknown),
+                            ),
+                            Box::new(move |_, _, _, _| {
+                                (Ty::new(TypeKind::Boolean(Unknown)), vec![])
+                            }),
+                        )],
+                    ),
+                    (
+                        FunctionKind::BinaryOp(BinaryLiteral::NotEq),
+                        vec![FunctionInterface(
+                            (
+                                vec![TypeKind::MapDiff((Unknown, Unknown))],
+                                TypeKind::Boolean(Unknown),
+                            ),
+                            Box::new(move |_, _, _, _| {
+                                (Ty::new(TypeKind::Boolean(Unknown)), vec![])
+                            }),
+                        )],
+                    ),
+                    (
                         FunctionKind::Function("addedKeys".to_owned()),
                         vec![FunctionInterface(
                             (vec![], TypeKind::Set(Unknown)),
@@ -990,6 +1121,50 @@ impl TypeKind {
                             ),
                         ],
                     ),
+                    (
+                        FunctionKind::Subscript,
+                        vec![FunctionInterface(
+                            (vec![TypeKind::Integer(Unknown)], TypeKind::String(Unknown)),
+                            Box::new(move |node, params, _, _| match (ty, &params[..]) {
+                                (Literal(literal), [TypeKind::Integer(Literal(index))]) => {
+                                    if let Result::Ok(index_uint) = u64::try_from(*index) {
+                                        if let Some(literal_fragment) =
+                                            literal.split('/').nth(index_uint as usize)
+                                        {
+                                            (
+                                                Ty::new(TypeKind::String(Literal(
+                                                    literal_fragment.to_owned(),
+                                                ))),
+                                                vec![],
+                                            )
+                                        } else {
+                                            (
+                                                Ty::new(TypeKind::String(Unknown)),
+                                                vec![
+                                                    (TypeCheckResult {
+                                                        reason: "index out of range".to_owned(),
+                                                        at: node.get_span().into(),
+                                                    }),
+                                                ],
+                                            )
+                                        }
+                                    } else {
+                                        (
+                                            Ty::new(TypeKind::String(Unknown)),
+                                            vec![
+                                                (TypeCheckResult {
+                                                    reason: "index must be unsigned integer"
+                                                        .to_owned(),
+                                                    at: node.get_span().into(),
+                                                }),
+                                            ],
+                                        )
+                                    }
+                                }
+                                _ => (Ty::new(TypeKind::String(Unknown)), vec![]),
+                            }),
+                        )],
+                    ),
                 ]);
                 interface.members.extend([])
             }
@@ -1032,6 +1207,26 @@ impl TypeKind {
                 interface.functions.extend([
                     (
                         FunctionKind::BinaryOp(BinaryLiteral::Eq),
+                        vec![
+                            FunctionInterface(
+                                (
+                                    vec![TypeKind::PathTemplateBound(Unknown)],
+                                    TypeKind::Boolean(Unknown),
+                                ),
+                                Box::new(move |_, _, _, _| {
+                                    (Ty::new(TypeKind::Boolean(Unknown)), vec![])
+                                }),
+                            ),
+                            FunctionInterface(
+                                (vec![TypeKind::Path(Unknown)], TypeKind::Boolean(Unknown)),
+                                Box::new(move |_, _, _, _| {
+                                    (Ty::new(TypeKind::Boolean(Unknown)), vec![])
+                                }),
+                            ),
+                        ],
+                    ),
+                    (
+                        FunctionKind::BinaryOp(BinaryLiteral::NotEq),
                         vec![
                             FunctionInterface(
                                 (
@@ -1135,6 +1330,15 @@ impl TypeKind {
                 interface.functions.extend([
                     (
                         FunctionKind::BinaryOp(BinaryLiteral::Eq),
+                        vec![FunctionInterface(
+                            (vec![TypeKind::Set(Unknown)], TypeKind::Boolean(Unknown)),
+                            Box::new(move |_, _, _, _| {
+                                (Ty::new(TypeKind::Boolean(Unknown)), vec![])
+                            }),
+                        )],
+                    ),
+                    (
+                        FunctionKind::BinaryOp(BinaryLiteral::NotEq),
                         vec![FunctionInterface(
                             (vec![TypeKind::Set(Unknown)], TypeKind::Boolean(Unknown)),
                             Box::new(move |_, _, _, _| {
@@ -1551,6 +1755,24 @@ impl TypeKind {
             }
             TypeKind::Timestamp => {
                 interface.functions.extend([
+                    (
+                        FunctionKind::BinaryOp(BinaryLiteral::Eq),
+                        vec![FunctionInterface(
+                            (vec![TypeKind::Timestamp], TypeKind::Boolean(Unknown)),
+                            Box::new(move |_, _, _, _| {
+                                (Ty::new(TypeKind::Boolean(Unknown)), vec![])
+                            }),
+                        )],
+                    ),
+                    (
+                        FunctionKind::BinaryOp(BinaryLiteral::NotEq),
+                        vec![FunctionInterface(
+                            (vec![TypeKind::Timestamp], TypeKind::Boolean(Unknown)),
+                            Box::new(move |_, _, _, _| {
+                                (Ty::new(TypeKind::Boolean(Unknown)), vec![])
+                            }),
+                        )],
+                    ),
                     (
                         FunctionKind::Function("date".to_owned()),
                         vec![FunctionInterface(
