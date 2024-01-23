@@ -1,6 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, hash::Hash, iter::zip};
 
-use miette::{Diagnostic, SourceSpan};
+use log::{debug, info};
+use miette::{Diagnostic, Report, SourceSpan};
 use thiserror::Error;
 
 use crate::{
@@ -38,6 +39,7 @@ impl TypeCheckResult {
 pub struct TypeCheckContext<'a> {
     pub bindings: &'a Bindings<'a>,
     pub symbol_references: &'a SymbolReferences<'a>,
+    pub source_code: &'a String,
 }
 
 pub type VariableTypeBindings<'a> = HashMap<&'a NodeID, Ty>;
@@ -124,6 +126,9 @@ fn check_function_args<'a>(
     args: Vec<Ty>,
     flow: &mut Flow,
     polluted: &RefCell<bool>,
+    flow_branch_reverse: bool,
+    on_examination: bool,
+    function_kind: Option<FunctionKind>,
 ) -> (Ty, Vec<TypeCheckResult>) {
     if let Some((return_ty, return_result)) =
         functions
@@ -143,7 +148,22 @@ fn check_function_args<'a>(
                 }
             })
     {
-        (return_ty.clone(), return_result)
+        if !on_examination && function_kind != Some(FunctionKind::UnaryOp(UnaryLiteral::Not)) {
+            if let TypeKind::Boolean(MayLiteral::Literal(bool_literal)) =
+                return_ty.kind(flow, polluted)
+            {
+                (
+                    Ty::new(TypeKind::Boolean(MayLiteral::Literal(
+                        bool_literal ^ flow_branch_reverse,
+                    ))),
+                    return_result,
+                )
+            } else {
+                (return_ty.clone(), return_result)
+            }
+        } else {
+            (return_ty.clone(), return_result)
+        }
     } else {
         (
             Ty::new(TypeKind::Any),
@@ -275,6 +295,9 @@ fn check_interface_function_calling<'a>(
             args,
             flow,
             polluted,
+            flow_branch_reverse,
+            *on_examination,
+            Some(function_kind),
         )
     }
 }
@@ -360,10 +383,50 @@ fn check_expression<'a, 'b>(
     on_examination: &'b mut bool,
     on_poisoning: bool,
 ) -> (Ty, Vec<TypeCheckResult>) {
+    let (ty, err) = check_expression_inner(
+        expr,
+        context,
+        variable_type_bindings,
+        flow,
+        flow_branch,
+        flow_branch_depth,
+        flow_branch_reverse,
+        polluted,
+        on_examination,
+        on_poisoning,
+    );
+    debug!(
+        "{:?} ({}) {:?}",
+        ty.expand_for_debug(flow),
+        flow_branch_reverse,
+        (Report::from(TypeCheckResult {
+            reason: "Expression".to_owned(),
+            at: expr.get_span().into()
+        })
+        .with_source_code(context.source_code.clone()))
+    );
+    (ty, err)
+}
+
+fn check_expression_inner<'a, 'b>(
+    expr: &'a Expression,
+    context: &'a TypeCheckContext<'a>,
+    variable_type_bindings: &'b VariableTypeBindings,
+    flow: &'b mut Flow,
+    flow_branch: &'b mut Vec<Branch>,
+    flow_branch_depth: &'b mut usize,
+    flow_branch_reverse: bool,
+    polluted: &RefCell<bool>,
+    on_examination: &'b mut bool,
+    on_poisoning: bool,
+) -> (Ty, Vec<TypeCheckResult>) {
     match &expr.kind {
-        ExpressionKind::Literal(Literal::Bool(b)) => {
-            (Ty::new(TypeKind::Boolean(MayLiteral::Literal(*b))), vec![])
-        }
+        ExpressionKind::Literal(Literal::Bool(b)) => (
+            Ty::new(TypeKind::Boolean(MayLiteral::Literal(
+                *b ^ flow_branch_reverse,
+            ))),
+            vec![],
+        ),
         ExpressionKind::Literal(Literal::Float(f)) => {
             (Ty::new(TypeKind::Float(MayLiteral::Literal(*f))), vec![])
         }
@@ -570,7 +633,7 @@ fn check_expression<'a, 'b>(
                 match flow_branch.get(_flow_branch_depth) {
                     Some(Branch::Through) => {
                         // TODO: need merge?
-                        let (left_ty, left_res) = check_expression(
+                        let (_left_ty, _left_res) = check_expression(
                             &left_expr,
                             context,
                             variable_type_bindings,
@@ -610,11 +673,13 @@ fn check_expression<'a, 'b>(
                             expr,
                             context,
                             left_ty,
-                            FunctionKind::BinaryOp(if *literal == BinaryLiteral::LogicalOr {
-                                BinaryLiteral::LogicalAnd
-                            } else {
-                                *literal
-                            }),
+                            FunctionKind::BinaryOp(
+                                if flow_branch_reverse && *literal == BinaryLiteral::LogicalOr {
+                                    BinaryLiteral::LogicalAnd
+                                } else {
+                                    *literal
+                                },
+                            ),
                             vec![right_ty],
                             flow,
                             flow_branch_reverse,
@@ -676,11 +741,14 @@ fn check_expression<'a, 'b>(
                                 expr,
                                 context,
                                 left_ty,
-                                FunctionKind::BinaryOp(if *literal == BinaryLiteral::LogicalAnd {
-                                    BinaryLiteral::LogicalOr
-                                } else {
-                                    *literal
-                                }),
+                                FunctionKind::BinaryOp(
+                                    if flow_branch_reverse && *literal == BinaryLiteral::LogicalAnd
+                                    {
+                                        BinaryLiteral::LogicalOr
+                                    } else {
+                                        *literal
+                                    },
+                                ),
                                 vec![right_ty],
                                 flow,
                                 flow_branch_reverse,
@@ -747,11 +815,13 @@ fn check_expression<'a, 'b>(
                             expr,
                             context,
                             left_ty,
-                            FunctionKind::BinaryOp(if *literal == BinaryLiteral::LogicalOr {
-                                BinaryLiteral::LogicalAnd
-                            } else {
-                                *literal
-                            }),
+                            FunctionKind::BinaryOp(
+                                if flow_branch_reverse && *literal == BinaryLiteral::LogicalOr {
+                                    BinaryLiteral::LogicalAnd
+                                } else {
+                                    *literal
+                                },
+                            ),
                             vec![right_ty],
                             flow,
                             flow_branch_reverse,
@@ -831,11 +901,13 @@ fn check_expression<'a, 'b>(
                         expr,
                         context,
                         left_ty,
-                        FunctionKind::BinaryOp(if *literal == BinaryLiteral::LogicalOr {
-                            BinaryLiteral::LogicalAnd
-                        } else {
-                            *literal
-                        }),
+                        FunctionKind::BinaryOp(
+                            if flow_branch_reverse && *literal == BinaryLiteral::LogicalOr {
+                                BinaryLiteral::LogicalAnd
+                            } else {
+                                *literal
+                            },
+                        ),
                         vec![right_ty],
                         flow,
                         flow_branch_reverse,
@@ -925,11 +997,8 @@ fn check_expression<'a, 'b>(
                 on_examination,
                 on_poisoning,
             );
-            let (bool_ty, res_2) = if let TypeKind::Unknown = target_ty.kind(flow, polluted) {
-                (OrAny::Any, vec![])
-            } else {
-                check_can_be_candidates(&target_ty, type_str_ty_candidates, expr, flow, polluted)
-            };
+            let (bool_ty, res_2) =
+                check_can_be_candidates(&target_ty, type_str_ty_candidates, expr, flow, polluted);
 
             if !*on_examination && flow_branch_reverse == false {
                 if let Ty::FlowType(flow_type_id, poison) = &target_ty {
@@ -1027,7 +1096,18 @@ fn check_expression<'a, 'b>(
                                     }
                                 })
                         }) {
-                            return (member.clone(), res);
+                            if let TypeKind::Boolean(MayLiteral::Literal(bool_literal)) =
+                                member.kind(flow, polluted)
+                            {
+                                return (
+                                    Ty::new(TypeKind::Boolean(MayLiteral::Literal(
+                                        bool_literal ^ flow_branch_reverse,
+                                    ))),
+                                    res,
+                                );
+                            } else {
+                                return (member.clone(), res);
+                            }
                         }
                     }
 
@@ -1163,6 +1243,9 @@ got: `.{}`",
                         params_ty,
                         flow,
                         polluted,
+                        flow_branch_reverse,
+                        *on_examination,
+                        None,
                     );
                     return (return_ty, [res, params_res, return_res].concat());
                 }
@@ -1274,6 +1357,9 @@ got: `.{}`",
                         params_ty,
                         flow,
                         polluted,
+                        flow_branch_reverse,
+                        *on_examination,
+                        None,
                     );
                     (return_ty, [params_res, return_res].concat())
                 }
@@ -1297,7 +1383,14 @@ fn check_rule<'a, 'b>(
     let mut result = vec![];
     let mut _polluted = RefCell::new(false);
 
-    println!("begin check rule {}", rule.span.0.start_point);
+    info!(
+        "begin check rule {:?}",
+        Report::from(TypeCheckResult {
+            reason: "rule".to_owned(),
+            at: rule.get_span().into()
+        })
+        .with_source_code(context.source_code.clone())
+    );
 
     loop {
         let mut flow = flow.clone();
@@ -1342,7 +1435,7 @@ fn check_rule<'a, 'b>(
                 &mut _polluted,
             ) {
                 result.push(TypeCheckResult {
-                    reason: "always true".to_owned(),
+                    reason: format!("always true"),
                     at: rule.condition.get_span().into(),
                 })
             }
@@ -1352,7 +1445,7 @@ fn check_rule<'a, 'b>(
                 &mut _polluted,
             ) {
                 result.push(TypeCheckResult {
-                    reason: "always false".to_owned(),
+                    reason: format!("always false"),
                     at: rule.condition.get_span().into(),
                 })
             }
@@ -1397,7 +1490,7 @@ fn check_rule<'a, 'b>(
                 .position(|branch| *branch == Branch::Side(false));
             match non_false_count {
                 None => {
-                    println!(
+                    info!(
                         "{:#?}",
                         flow.get(request_resource_data_ty_id)
                             .unwrap()
@@ -1417,7 +1510,7 @@ fn check_rule<'a, 'b>(
         branch_count += 1;
     }
 
-    println!("{:?}", branch_count);
+    debug!("{:?}", branch_count);
 
     result
 }

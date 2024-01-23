@@ -185,7 +185,6 @@ impl Ty {
 #[derive(Debug, Clone)]
 pub enum TypeKind {
     Any,
-    Unknown,
     Null,
     Boolean(MayLiteral<bool>),
     Bytes(MayLiteral<Vec<u8>>),
@@ -459,7 +458,6 @@ impl TypeKind {
     pub fn erase_literal_constraint(&self) -> TypeKind {
         match self {
             TypeKind::Any => TypeKind::Any,
-            TypeKind::Unknown => TypeKind::Unknown,
             TypeKind::Null => TypeKind::Null,
             TypeKind::Boolean(_) => TypeKind::Boolean(MayLiteral::Unknown),
             TypeKind::Bytes(_) => TypeKind::Bytes(MayLiteral::Unknown),

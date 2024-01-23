@@ -19,6 +19,8 @@ mod symbol;
 mod ty;
 
 fn main() {
+    env_logger::init();
+
     let code = fs::read_to_string("./tmp/realworld.rules").unwrap();
 
     let ast = parse(&code);
@@ -32,6 +34,7 @@ fn main() {
     let type_check_context = TypeCheckContext {
         bindings: &bindings,
         symbol_references: &symbol_references,
+        source_code: &code,
     };
 
     let type_check_result = check(
