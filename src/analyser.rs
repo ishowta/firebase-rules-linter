@@ -61,11 +61,14 @@ fn check_expression(ctx: &AnalysysContext, rule: &Expression) -> ExpressionPrope
         r#"
 (declare-const keys (Array String Bool))
 
-(declare-const arr (Array String Bool))
+(declare-const arr (Seq String))
 
 (declare-const foo Refl)
 
 (declare-const literal_3 (Int))
+
+(declare-const bar_inner String)
+(declare-const bar Refl)
 "#
         .to_owned(),
     );
@@ -75,15 +78,21 @@ fn check_expression(ctx: &AnalysysContext, rule: &Expression) -> ExpressionPrope
             // keys = data.keys()
             format!("(forall ((key String)) (= (not (= (select request_resource_data_inner key) undefined)) (= (select keys key) true)))"),
             // arr = ['foo', 'baz']
-            format!("(= arr (store (store ((as const (Array String Bool)) false) \"foo\" true) \"bar\" true))"),
+            format!("(= arr (seq.++ (seq.unit \"foo\") (seq.unit \"bar\")))"),
             // keys.hasOnly(arr)
-            format!("(forall ((key String)) (implies (= (select keys key) true) (= (select arr key) true)))"),
+            format!("(forall ((key String)) (implies (= (select keys key) true) (seq.contains arr (seq.unit key))))"),
+            format!("(= arr request_resource_data_shape)"),
             // 'foo' in data
             format!("(= (select request_resource_data_inner \"foo\") foo)"),
             // 3
             format!("(= literal_3 3)"),
             // foo == 3
             format!("(= foo (int literal_3))"),
+            // 'bar' in data
+            format!("(= (select request_resource_data_inner \"bar\") bar)"),
+            // bar.len() < n
+            format!("(< (str.len bar_inner) 1000)"),
+            format!("(= bar (str bar_inner))"),
         ],
         errors: vec![],
     }
@@ -106,44 +115,41 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
 (declare-datatypes ((Refl 0)) (
     (
         (undefined)
-        (null)
-        (bool (bool_val Bool))
+        ;(null)
+        ;(bool (bool_val Bool))
         (int (int_val Int))
-        (float (float_val Float64))
+        ;(float (float_val Float64))
         (str (str_val String))
-        (char (char_val Unicode))
-        (duration)
-        (latlng)
-        (timestamp)
-        (list (list_val (Seq Refl)))
-        (map (map_val (Array String Refl)))
-        (mapdiff (mapdiff_left (Array String Refl)) (mapdiff_right (Array String Refl)))
-        (path (path_val String))
-        (pathubt (pathubt_val (Seq String)))
-        (pathbt (pathbt_val (Seq String)))
+        ;(char (char_val Unicode))
+        ;(duration)
+        ;(latlng)
+        ;(timestamp)
+        ;(list (list_val (Seq Refl)))
+        (map (map_val (Array String Refl)) (map_shape (Seq String)))
+        ;(mapdiff (mapdiff_left (Array String Refl)) (mapdiff_right (Array String Refl)))
+        ;(path (path_val String))
+        ;(pathubt (pathubt_val (Seq String)))
+        ;(pathbt (pathbt_val (Seq String)))
     )
 ))
 
 (declare-const request_resource_data Refl)
 (declare-const request_resource_data_inner (Array String Refl))
-(assert (= request_resource_data (map request_resource_data_inner)))
+(declare-const request_resource_data_shape (Seq String))
+;(assert (forall ((key String)) (= (not (= (select request_resource_data_inner key) undefined)) (seq.contains request_resource_data_shape (seq.unit key)))))
+(assert (= request_resource_data (map request_resource_data_inner request_resource_data_shape)))
 
 (declare-const request_resource Refl)
 (declare-const request_resource_inner (Array String Refl))
+(declare-const request_resource_shape (Seq String))
 (assert (= (select request_resource_inner "data") request_resource_data))
-(assert (= request_resource (map request_resource_inner)))
+(assert (= request_resource (map request_resource_inner request_resource_shape)))
 
 (declare-const request Refl)
 (declare-const request_inner (Array String Refl))
+(declare-const request_shape (Seq String))
 (assert (= (select request_inner "resource") request_resource))
-(assert (= request (map request_inner)))
-
-; 1MB limit
-(declare-const sizes (Array String Int))
-(assert (forall ((key String) (value Int)) (implies (= (select request_resource_data_inner key) (int value)) (= (select sizes key) 8))))
-;(assert (forall ((key String)) (implies (= (select request_resource_data_inner key) undefined) (= (select sizes key) 0))))
-(declare-const size_list (Seq Int))
-(assert (forall ((key String)) (implies (not (= (select sizes key) 0)) (not (= (seq.indexof size_list (seq.unit (select sizes key))) -1)))))
+(assert (= request (map request_inner request_shape)))
 "#
         )]),
     };
@@ -185,33 +191,143 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
         }
     }
 
-    // check always true
+    //     // check always true
+    //     {
+    //         debug!("check always true");
+    //         let constraint = constraints
+    //             .iter()
+    //             .fold("true".to_owned(), |acc, constraint| {
+    //                 format!("(and {} {})", acc, constraint)
+    //             });
+    //         let solver = Solver::new(&ctx.z3_context);
+    //         let source_code = format!(
+    //             "
+    // {}
+
+    // (assert (not {}))
+    // ",
+    //             ctx.declarations.borrow().join("\n"),
+    //             constraint
+    //         );
+    //         debug!("source code:\n{}", source_code);
+    //         solver.from_string(source_code);
+    //         match solver.check() {
+    //             SatResult::Sat => {
+    //                 debug!("sat");
+    //                 let model = solver.get_model().unwrap();
+    //                 debug!("falthy example:\n{:#?}", model);
+    //             }
+    //             SatResult::Unsat => errors.push(AnalysysError::new(format!("Always true"), rule)),
+    //             SatResult::Unknown => errors.push(AnalysysError::new(
+    //                 format!("Static analysis failed because this conditions are too complex."),
+    //                 rule,
+    //             )),
+    //         }
+    //     }
+
+    // 1MB limit
     {
-        debug!("check always true");
-        let constraint = constraints
-            .iter()
-            .fold("true".to_owned(), |acc, constraint| {
-                format!("(and {} {})", acc, constraint)
-            });
+        let limit_constraint = r#"
+; 1MB limit
+(declare-const sizes (Array String Int))
+;(assert (forall ((key String) (value Int)) (implies (= (select request_resource_data_inner key) (int value)) (= (select sizes key) 8))))
+;(assert (forall ((key String)) (implies (= (select request_resource_data_inner key) undefined) (= (select sizes key) 0))))
+(assert
+    (=
+        true
+        (seq.foldl
+            (lambda
+                ((acc Bool) (key String))
+                (and
+                    acc
+                    (forall
+                        ((value Int))
+                        (implies
+                            (=
+                                (select request_resource_data_inner key)
+                                (int value)
+                            )
+                            (=
+                                (select sizes key)
+                                8
+                            )
+                        )
+                    )
+                    (forall
+                        ((value String))
+                        (implies
+                            (=
+                                (select request_resource_data_inner key)
+                                (str value)
+                            )
+                            (=
+                                (select sizes key)
+                                (str.len value)
+                            )
+                        )
+                    )
+                    (forall
+                        ((value (Array String Refl)) (shape (Seq String)))
+                        (implies
+                            (=
+                                (select request_resource_data_inner key)
+                                (map value shape)
+                            )
+                            (=
+                                (select sizes key)
+                                0
+                            )
+                        )
+                    )
+                    (implies
+                        (=
+                            (select request_resource_data_inner key)
+                            undefined
+                        )
+                        (=
+                            (select sizes key)
+                            0
+                        )
+                    )
+                )
+            )
+            true
+            arr
+        )
+    )
+)
+;(declare-const size_list (Seq Int))
+;(assert (forall ((key String)) (implies (not (= (select sizes key) 0)) (not (= (seq.indexof size_list (seq.unit (select sizes key))) -1)))))
+(assert (> (seq.foldl (lambda ((acc Int) (key String)) (+ acc (select sizes key))) 0 arr) 262144))
+        "#;
+        debug!("check 1MB limit");
+        let constraint = constraints.iter().fold("".to_owned(), |acc, constraint| {
+            format!("{}\n(assert {})", acc, constraint)
+        });
         let solver = Solver::new(&ctx.z3_context);
         let source_code = format!(
             "
 {}
+{}
 
-(assert (not {}))
+{}
 ",
             ctx.declarations.borrow().join("\n"),
-            constraint
+            constraint,
+            limit_constraint
         );
         debug!("source code:\n{}", source_code);
         solver.from_string(source_code);
         match solver.check() {
             SatResult::Sat => {
+                errors.push(AnalysysError::new(format!("over 1MB limit"), rule));
                 debug!("sat");
                 let model = solver.get_model().unwrap();
-                debug!("falthy example:\n{:#?}", model);
+                debug!("truthly example:\n{}", model);
             }
-            SatResult::Unsat => errors.push(AnalysysError::new(format!("Always true"), rule)),
+            SatResult::Unsat => {
+                debug!("success unsat");
+            }
             SatResult::Unknown => errors.push(AnalysysError::new(
                 format!("Static analysis failed because this conditions are too complex."),
                 rule,
