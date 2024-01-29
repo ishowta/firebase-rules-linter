@@ -1,5 +1,4 @@
 # firebase-rules-linter
 
-## requirements
-
-- usize >= u64, isize >= i64
+> [!CAUTION]
+> This project is work in progress
