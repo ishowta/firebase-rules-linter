@@ -1717,7 +1717,7 @@ impl TypeKind {
                     (
                         FunctionKind::Function("toUtf8".to_owned()),
                         vec![FunctionInterface(
-                            (vec![], TypeKind::String(Unknown)),
+                            (vec![], TypeKind::Bytes(Unknown)),
                             Box::new(move |_, _, _, _| match ty {
                                 Literal(left) => {
                                     (Ty::new(TypeKind::Bytes(Literal(left.bytes().collect()))), vec![])
