@@ -109,16 +109,6 @@ fn check_expression(ctx: &AnalysysContext, rule: &Expression) -> ExpressionPrope
 (seq.unit \"a6\")
 (seq.unit \"a7\")
 (seq.unit \"a8\")
-(seq.unit \"a9\")
-(seq.unit \"a10\")
-(seq.unit \"a11\")
-(seq.unit \"a12\")
-(seq.unit \"a13\")
-(seq.unit \"a14\")
-(seq.unit \"a15\")
-(seq.unit \"a16\")
-(seq.unit \"a17\")
-(seq.unit \"a18\")
 ))"
             ),
             // keys.hasOnly(arr)
@@ -142,10 +132,7 @@ fn check_expression(ctx: &AnalysysContext, rule: &Expression) -> ExpressionPrope
 (and
     (or
         (not (list-exists request_resource_data_inner \"a0\"))
-        (and
-            (= a0 (list-get request_resource_data_inner \"a0\"))
-            (= a0 (str 26214))
-        )
+        (= a0 (list-get request_resource_data_inner \"a0\"))
     )
     (or
         (not (list-exists request_resource_data_inner \"a1\"))
@@ -210,74 +197,11 @@ fn check_expression(ctx: &AnalysysContext, rule: &Expression) -> ExpressionPrope
             (= a9 (str 1000))
         )
     )
-    (and
-        (list-exists request_resource_data_inner \"a10\")
+    (or
+        (not (list-exists request_resource_data_inner \"a10\"))
         (and
             (= a10 (list-get request_resource_data_inner \"a10\"))
             (= a10 (str 26214))
-        )
-    )
-    (and
-        (list-exists request_resource_data_inner \"a11\")
-        (and
-            (= a11 (list-get request_resource_data_inner \"a11\"))
-            (= a11 (str 26214))
-        )
-    )
-    (and
-        (list-exists request_resource_data_inner \"a12\")
-        (and
-            (= a12 (list-get request_resource_data_inner \"a12\"))
-            (= a12 (str 26214))
-        )
-    )
-    (and
-        (list-exists request_resource_data_inner \"a13\")
-        (and
-            (= a13 (list-get request_resource_data_inner \"a13\"))
-            (= a13 (str 26214))
-        )
-    )
-    (and
-        (list-exists request_resource_data_inner \"a14\")
-        (and
-            (= a14 (list-get request_resource_data_inner \"a14\"))
-            (= a14 (str 500))
-        )
-    )
-    (and
-        (list-exists request_resource_data_inner \"a15\")
-        (and
-            (= a15 (list-get request_resource_data_inner \"a15\"))
-            (= a15 (str 600))
-        )
-    )
-    (and
-        (list-exists request_resource_data_inner \"a16\")
-        (and
-            (= a16 (list-get request_resource_data_inner \"a16\"))
-            (= a16 (str 700))
-        )
-    )
-    (and
-        (list-exists request_resource_data_inner \"a17\")
-        (and
-            (= a17 (list-get request_resource_data_inner \"a17\"))
-            (= a17 (str 800))
-        )
-    )
-    (and
-        (list-exists request_resource_data_inner \"a18\")
-        (and
-            (= a18 (list-get request_resource_data_inner \"a18\"))
-            (= a18 (str 900))
-        )
-    )
-    (and
-        (list-exists request_resource_data_inner \"a19\")
-        (and
-            (= a19 (list-get request_resource_data_inner \"a19\"))
-            (= a19 (str 1000))
         )
     )
 )
