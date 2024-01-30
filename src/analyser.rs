@@ -67,6 +67,27 @@ fn check_expression(ctx: &AnalysysContext, rule: &Expression) -> ExpressionPrope
 
 (declare-const bar_inner Int)
 (declare-const bar Refl)
+
+(declare-const a0 Refl)
+(declare-const a1 Refl)
+(declare-const a2 Refl)
+(declare-const a3 Refl)
+(declare-const a4 Refl)
+(declare-const a5 Refl)
+(declare-const a6 Refl)
+(declare-const a7 Refl)
+(declare-const a8 Refl)
+(declare-const a9 Refl)
+(declare-const a10 Refl)
+(declare-const a11 Refl)
+(declare-const a12 Refl)
+(declare-const a13 Refl)
+(declare-const a14 Refl)
+(declare-const a15 Refl)
+(declare-const a16 Refl)
+(declare-const a17 Refl)
+(declare-const a18 Refl)
+(declare-const a19 Refl)
 "#
         .to_owned(),
     );
@@ -77,7 +98,29 @@ fn check_expression(ctx: &AnalysysContext, rule: &Expression) -> ExpressionPrope
             format!("(= keys (list-keys request_resource_data_inner))"),
             //format!("(forall ((key String)) (= (not (= (list-get request_resource_data_inner key) undefined)) (= (select keys key) true)))"),
             // arr = ['foo', 'baz']
-            format!("(= arr (seq.++ (seq.unit \"foo\") (seq.unit \"bar\") (seq.unit \"hoge\")))"),
+            format!(
+                "(= arr (seq.++ (seq.unit \"foo\") (seq.unit \"bar\")
+(seq.unit \"a0\")
+(seq.unit \"a1\")
+(seq.unit \"a2\")
+(seq.unit \"a3\")
+(seq.unit \"a4\")
+(seq.unit \"a5\")
+(seq.unit \"a6\")
+(seq.unit \"a7\")
+(seq.unit \"a8\")
+(seq.unit \"a9\")
+(seq.unit \"a10\")
+(seq.unit \"a11\")
+(seq.unit \"a12\")
+(seq.unit \"a13\")
+(seq.unit \"a14\")
+(seq.unit \"a15\")
+(seq.unit \"a16\")
+(seq.unit \"a17\")
+(seq.unit \"a18\")
+))"
+            ),
             // keys.hasOnly(arr)
             //format!("(forall ((key String)) (implies (= (select keys key) true) (seq.contains arr (seq.unit key))))"),
             format!("(= arr keys)"),
@@ -92,7 +135,154 @@ fn check_expression(ctx: &AnalysysContext, rule: &Expression) -> ExpressionPrope
             // bar is string
             format!("(= bar (str bar_inner))"),
             // bar.len() < n
+            format!("(>= bar_inner 0)"),
             format!("(< bar_inner 100)"),
+            format!(
+                "
+(and
+    (or
+        (not (list-exists request_resource_data_inner \"a0\"))
+        (and
+            (= a0 (list-get request_resource_data_inner \"a0\"))
+            (= a0 (str 26214))
+        )
+    )
+    (or
+        (not (list-exists request_resource_data_inner \"a1\"))
+        (and
+            (= a1 (list-get request_resource_data_inner \"a1\"))
+            (= a1 (str 26214))
+        )
+    )
+    (or
+        (not (list-exists request_resource_data_inner \"a2\"))
+        (and
+            (= a2 (list-get request_resource_data_inner \"a2\"))
+            (= a2 (str 26214))
+        )
+    )
+    (or
+        (not (list-exists request_resource_data_inner \"a3\"))
+        (and
+            (= a3 (list-get request_resource_data_inner \"a3\"))
+            (= a3 (str 26214))
+        )
+    )
+    (or
+        (not (list-exists request_resource_data_inner \"a4\"))
+        (and
+            (= a4 (list-get request_resource_data_inner \"a4\"))
+            (= a4 (str 500))
+        )
+    )
+    (or
+        (not (list-exists request_resource_data_inner \"a5\"))
+        (and
+            (= a5 (list-get request_resource_data_inner \"a5\"))
+            (= a5 (str 600))
+        )
+    )
+    (or
+        (not (list-exists request_resource_data_inner \"a6\"))
+        (and
+            (= a6 (list-get request_resource_data_inner \"a6\"))
+            (= a6 (str 700))
+        )
+    )
+    (or
+        (not (list-exists request_resource_data_inner \"a7\"))
+        (and
+            (= a7 (list-get request_resource_data_inner \"a7\"))
+            (= a7 (str 800))
+        )
+    )
+    (or
+        (not (list-exists request_resource_data_inner \"a8\"))
+        (and
+            (= a8 (list-get request_resource_data_inner \"a8\"))
+            (= a8 (str 900))
+        )
+    )
+    (or
+        (not (list-exists request_resource_data_inner \"a9\"))
+        (and
+            (= a9 (list-get request_resource_data_inner \"a9\"))
+            (= a9 (str 1000))
+        )
+    )
+    (and
+        (list-exists request_resource_data_inner \"a10\")
+        (and
+            (= a10 (list-get request_resource_data_inner \"a10\"))
+            (= a10 (str 26214))
+        )
+    )
+    (and
+        (list-exists request_resource_data_inner \"a11\")
+        (and
+            (= a11 (list-get request_resource_data_inner \"a11\"))
+            (= a11 (str 26214))
+        )
+    )
+    (and
+        (list-exists request_resource_data_inner \"a12\")
+        (and
+            (= a12 (list-get request_resource_data_inner \"a12\"))
+            (= a12 (str 26214))
+        )
+    )
+    (and
+        (list-exists request_resource_data_inner \"a13\")
+        (and
+            (= a13 (list-get request_resource_data_inner \"a13\"))
+            (= a13 (str 26214))
+        )
+    )
+    (and
+        (list-exists request_resource_data_inner \"a14\")
+        (and
+            (= a14 (list-get request_resource_data_inner \"a14\"))
+            (= a14 (str 500))
+        )
+    )
+    (and
+        (list-exists request_resource_data_inner \"a15\")
+        (and
+            (= a15 (list-get request_resource_data_inner \"a15\"))
+            (= a15 (str 600))
+        )
+    )
+    (and
+        (list-exists request_resource_data_inner \"a16\")
+        (and
+            (= a16 (list-get request_resource_data_inner \"a16\"))
+            (= a16 (str 700))
+        )
+    )
+    (and
+        (list-exists request_resource_data_inner \"a17\")
+        (and
+            (= a17 (list-get request_resource_data_inner \"a17\"))
+            (= a17 (str 800))
+        )
+    )
+    (and
+        (list-exists request_resource_data_inner \"a18\")
+        (and
+            (= a18 (list-get request_resource_data_inner \"a18\"))
+            (= a18 (str 900))
+        )
+    )
+    (and
+        (list-exists request_resource_data_inner \"a19\")
+        (and
+            (= a19 (list-get request_resource_data_inner \"a19\"))
+            (= a19 (str 1000))
+        )
+    )
+)
+"
+            ),
         ],
         errors: vec![],
     }
@@ -132,6 +322,10 @@ fn solve(source: &String) -> SolverResult {
         }
         Some("unsat") => SolverResult::Unsat,
         Some("unknown") => SolverResult::Unknown,
+        Some(error) => {
+            eprintln!("{}", error);
+            panic!()
+        }
         _ => panic!(),
     }
 }
@@ -185,6 +379,24 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
             (= (key (head lst)) sk)
             (value (head lst))
             (list-get (tail lst) sk)
+        )
+    )
+)
+
+(define-fun-rec
+    list-exists
+    (
+        (lst (List (Entry String Refl)))
+        (sk String)
+    )
+    Bool
+    (if
+        (= lst nil)
+        false
+        (if
+            (= (key (head lst)) sk)
+            true
+            (list-exists (tail lst) sk)
         )
     )
 )
@@ -315,7 +527,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
         )
     )
 )
-(assert (> (list-sum request_resource_data_inner) 1000))
+(assert (> (list-sum request_resource_data_inner) 262144))
         "#;
         debug!("check 1MB limit");
         let constraint = constraints.iter().fold("".to_owned(), |acc, constraint| {
