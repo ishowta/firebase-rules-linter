@@ -1,4 +1,4 @@
-use nanoid::nanoid;
+use nanoid::{alphabet, nanoid};
 
 use crate::{
     ast::{Argument, Function, LetBinding, Node, NodeID, PathCapture, PathCaptureGroup},
@@ -47,7 +47,7 @@ pub struct SymbolID(pub String);
 
 impl SymbolID {
     pub fn new() -> SymbolID {
-        SymbolID(nanoid!())
+        SymbolID(nanoid!(6, &alphabet::SAFE[12..]))
     }
 }
 

@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use miette::SourceSpan;
-use nanoid::nanoid;
+use nanoid::{alphabet, nanoid};
 use tree_sitter::Range;
 
 #[derive(Debug)]
@@ -14,7 +14,7 @@ pub struct NodeID(pub String);
 
 impl NodeID {
     pub fn new() -> NodeID {
-        NodeID(nanoid!())
+        NodeID(nanoid!(6, &alphabet::SAFE[12..]))
     }
 }
 

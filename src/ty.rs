@@ -1,4 +1,4 @@
-use nanoid::nanoid;
+use nanoid::{alphabet, nanoid};
 use std::{cell::RefCell, collections::HashMap, fmt::Display, hash::Hash, iter::zip};
 
 use crate::{
@@ -14,7 +14,7 @@ pub struct TypeID(pub String);
 
 impl TypeID {
     pub fn new() -> TypeID {
-        TypeID(nanoid!())
+        TypeID(nanoid!(6, &alphabet::SAFE[12..]))
     }
 }
 
