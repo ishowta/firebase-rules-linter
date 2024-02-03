@@ -329,142 +329,165 @@ pub enum ReflTypeKind {
     Timestamp,
 }
 
-fn destruct(
+fn destruct_bool(
+    refl_sym: &Symbol,
     expr: &dyn Node,
     declarations: &mut Vec<Declaration>,
+) -> (Symbol, Constraint) {
+    let dest_val_sym = Symbol::new(expr);
+    declarations.push(Declaration::new(&dest_val_sym, &Sort::Bool));
+    (
+        dest_val_sym.clone(),
+        constraint!("=", refl_sym, constraint!("bool", dest_val_sym)),
+    )
+}
+
+fn destruct_bytes(
     refl_sym: &Symbol,
-    refl_ty: ReflTypeKind,
-) -> (Vec<Symbol>, Vec<Constraint>) {
-    match refl_ty {
-        ReflTypeKind::Undefined
-        | ReflTypeKind::Null
-        | ReflTypeKind::Duration
-        | ReflTypeKind::LatLng
-        | ReflTypeKind::Timestamp
-        | ReflTypeKind::Path => (vec![], vec![]),
-        ReflTypeKind::Boolean => {
-            let dest_val_sym = Symbol::new(expr);
-            declarations.push(Declaration::new(&dest_val_sym, &Sort::Bool));
-            (
-                vec![dest_val_sym.clone()],
-                vec![constraint!(
-                    "=",
-                    refl_sym,
-                    constraint!("bool", dest_val_sym)
-                )],
-            )
-        }
-        ReflTypeKind::Bytes => {
-            let dest_val_sym = Symbol::new(expr);
-            let dest_bytes_sym = Symbol::new(expr);
-            declarations.push(Declaration::new(&dest_val_sym, &Sort::String));
-            declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
-            (
-                vec![dest_val_sym.clone(), dest_bytes_sym.clone()],
-                vec![constraint!(
-                    "=",
-                    refl_sym,
-                    constraint!("bytes", dest_val_sym, dest_bytes_sym)
-                )],
-            )
-        }
-        ReflTypeKind::Float => {
-            let dest_val_sym = Symbol::new(expr);
-            declarations.push(Declaration::new(&dest_val_sym, &Sort::Float64));
-            (
-                vec![dest_val_sym.clone()],
-                vec![constraint!(
-                    "=",
-                    refl_sym,
-                    constraint!("float", dest_val_sym)
-                )],
-            )
-        }
-        ReflTypeKind::Integer => {
-            let dest_val_sym = Symbol::new(expr);
-            declarations.push(Declaration::new(&dest_val_sym, &Sort::Int));
-            (
-                vec![dest_val_sym.clone()],
-                vec![constraint!("=", refl_sym, constraint!("int", dest_val_sym))],
-            )
-        }
-        ReflTypeKind::List => {
-            let dest_val_sym = Symbol::new(expr);
-            let dest_bytes_sym = Symbol::new(expr);
-            declarations.push(Declaration::new(
-                &dest_val_sym,
-                &Sort::Seq(Box::new(Sort::Refl)),
-            ));
-            declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
-            (
-                vec![dest_val_sym.clone(), dest_bytes_sym.clone()],
-                vec![constraint!(
-                    "=",
-                    refl_sym,
-                    constraint!("list", dest_val_sym, dest_bytes_sym)
-                )],
-            )
-        }
-        ReflTypeKind::Map => {
-            let dest_val_sym = Symbol::new(expr);
-            declarations.push(Declaration::new(&dest_val_sym, &Sort::Map));
-            (
-                vec![dest_val_sym.clone()],
-                vec![constraint!("=", refl_sym, constraint!("map", dest_val_sym))],
-            )
-        }
-        ReflTypeKind::MapDiff => {
-            let dest_lval_sym = Symbol::new(expr);
-            let dest_rval_sym = Symbol::new(expr);
-            let dest_bytes_sym = Symbol::new(expr);
-            declarations.push(Declaration::new(&dest_lval_sym, &Sort::Map));
-            declarations.push(Declaration::new(&dest_rval_sym, &Sort::Map));
-            declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
-            (
-                vec![
-                    dest_lval_sym.clone(),
-                    dest_rval_sym.clone(),
-                    dest_bytes_sym.clone(),
-                ],
-                vec![constraint!(
-                    "=",
-                    refl_sym,
-                    constraint!("mapdiff", dest_lval_sym, dest_rval_sym, dest_bytes_sym)
-                )],
-            )
-        }
-        ReflTypeKind::Set => {
-            let dest_val_sym = Symbol::new(expr);
-            let dest_bytes_sym = Symbol::new(expr);
-            declarations.push(Declaration::new(
-                &dest_val_sym,
-                &Sort::Seq(Box::new(Sort::Refl)),
-            ));
-            declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
-            (
-                vec![dest_val_sym.clone(), dest_bytes_sym.clone()],
-                vec![constraint!(
-                    "=",
-                    refl_sym,
-                    constraint!("set", dest_val_sym, dest_bytes_sym)
-                )],
-            )
-        }
-        ReflTypeKind::String => {
-            let dest_val_sym = Symbol::new(expr);
-            let dest_bytes_sym = Symbol::new(expr);
-            declarations.push(Declaration::new(&dest_val_sym, &Sort::String));
-            declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
-            (
-                vec![dest_val_sym.clone(), dest_bytes_sym.clone()],
-                vec![constraint!(
-                    "=",
-                    refl_sym,
-                    constraint!("str", dest_val_sym, dest_bytes_sym)
-                )],
-            )
-        }
-    }
+    expr: &dyn Node,
+    declarations: &mut Vec<Declaration>,
+) -> (Symbol, Symbol, Constraint) {
+    let dest_val_sym = Symbol::new(expr);
+    let dest_bytes_sym = Symbol::new(expr);
+    declarations.push(Declaration::new(&dest_val_sym, &Sort::String));
+    declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
+    (
+        dest_val_sym.clone(),
+        dest_bytes_sym.clone(),
+        constraint!(
+            "=",
+            refl_sym,
+            constraint!("bytes", dest_val_sym, dest_bytes_sym)
+        ),
+    )
+}
+
+fn destruct_float(
+    refl_sym: &Symbol,
+    expr: &dyn Node,
+    declarations: &mut Vec<Declaration>,
+) -> (Symbol, Constraint) {
+    let dest_val_sym = Symbol::new(expr);
+    declarations.push(Declaration::new(&dest_val_sym, &Sort::Float64));
+    (
+        dest_val_sym.clone(),
+        constraint!("=", refl_sym, constraint!("float", dest_val_sym)),
+    )
+}
+
+fn destruct_int(
+    refl_sym: &Symbol,
+    expr: &dyn Node,
+    declarations: &mut Vec<Declaration>,
+) -> (Symbol, Constraint) {
+    let dest_val_sym = Symbol::new(expr);
+    declarations.push(Declaration::new(&dest_val_sym, &Sort::Int));
+    (
+        dest_val_sym.clone(),
+        constraint!("=", refl_sym, constraint!("int", dest_val_sym)),
+    )
+}
+
+fn destruct_list(
+    refl_sym: &Symbol,
+    expr: &dyn Node,
+    declarations: &mut Vec<Declaration>,
+) -> (Symbol, Symbol, Constraint) {
+    let dest_val_sym = Symbol::new(expr);
+    let dest_bytes_sym = Symbol::new(expr);
+    declarations.push(Declaration::new(
+        &dest_val_sym,
+        &Sort::Seq(Box::new(Sort::Refl)),
+    ));
+    declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
+    (
+        dest_val_sym.clone(),
+        dest_bytes_sym.clone(),
+        constraint!(
+            "=",
+            refl_sym,
+            constraint!("list", dest_val_sym, dest_bytes_sym)
+        ),
+    )
+}
+
+fn destruct_map(
+    refl_sym: &Symbol,
+    expr: &dyn Node,
+    declarations: &mut Vec<Declaration>,
+) -> (Symbol, Constraint) {
+    let dest_val_sym = Symbol::new(expr);
+    declarations.push(Declaration::new(&dest_val_sym, &Sort::Map));
+    (
+        dest_val_sym.clone(),
+        constraint!("=", refl_sym, constraint!("map", dest_val_sym)),
+    )
+}
+
+fn destruct_mapdiff(
+    refl_sym: &Symbol,
+    expr: &dyn Node,
+    declarations: &mut Vec<Declaration>,
+) -> (Symbol, Symbol, Symbol, Constraint) {
+    let dest_lval_sym = Symbol::new(expr);
+    let dest_rval_sym = Symbol::new(expr);
+    let dest_bytes_sym = Symbol::new(expr);
+    declarations.push(Declaration::new(&dest_lval_sym, &Sort::Map));
+    declarations.push(Declaration::new(&dest_rval_sym, &Sort::Map));
+    declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
+    (
+        dest_lval_sym.clone(),
+        dest_rval_sym.clone(),
+        dest_bytes_sym.clone(),
+        constraint!(
+            "=",
+            refl_sym,
+            constraint!("mapdiff", dest_lval_sym, dest_rval_sym, dest_bytes_sym)
+        ),
+    )
+}
+
+fn destruct_set(
+    refl_sym: &Symbol,
+    expr: &dyn Node,
+    declarations: &mut Vec<Declaration>,
+) -> (Symbol, Symbol, Constraint) {
+    let dest_val_sym = Symbol::new(expr);
+    let dest_bytes_sym = Symbol::new(expr);
+    declarations.push(Declaration::new(
+        &dest_val_sym,
+        &Sort::Seq(Box::new(Sort::Refl)),
+    ));
+    declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
+    (
+        dest_val_sym.clone(),
+        dest_bytes_sym.clone(),
+        constraint!(
+            "=",
+            refl_sym,
+            constraint!("set", dest_val_sym, dest_bytes_sym)
+        ),
+    )
+}
+
+fn destruct_string(
+    refl_sym: &Symbol,
+    expr: &dyn Node,
+    declarations: &mut Vec<Declaration>,
+) -> (Symbol, Symbol, Constraint) {
+    let dest_val_sym = Symbol::new(expr);
+    let dest_bytes_sym = Symbol::new(expr);
+    declarations.push(Declaration::new(&dest_val_sym, &Sort::String));
+    declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
+    (
+        dest_val_sym.clone(),
+        dest_bytes_sym.clone(),
+        constraint!(
+            "=",
+            refl_sym,
+            constraint!("str", dest_val_sym, dest_bytes_sym)
+        ),
+    )
 }
 
 fn check_function_calling(
@@ -485,50 +508,118 @@ fn check_function_calling(
         FunctionKind::UnaryOp(_) => todo!(),
         FunctionKind::BinaryOp(binary_op) => match binary_op {
             BinaryLiteral::And => {
-                let (arg_bool_syms, arg_bool_constraints): (
-                    Vec<Vec<Symbol>>,
-                    Vec<Vec<Constraint>>,
-                ) = args
-                    .iter()
-                    .map(|arg| {
-                        destruct(cur_expr, declarations, &arg.val_sym, ReflTypeKind::Boolean)
-                    })
-                    .unzip();
-                vec![
+                let [left_res, right_res] = args[..] else {
+                    panic!()
+                };
+                let (left_val, left_constraint) =
+                    destruct_bool(&left_res.val_sym, cur_expr, declarations);
+                let (right_val, right_constraint) =
+                    destruct_bool(&right_res.val_sym, cur_expr, declarations);
+
+                vec![constraint!(
+                    "=",
+                    cur_val_sym,
                     constraint!(
-                        "=",
-                        cur_val_sym,
+                        "bool",
                         constraint!(
-                            "bool",
-                            Constraint::new("and", arg_bool_syms.iter().flatten())
+                            "and",
+                            constraint!("and", left_val, left_constraint),
+                            constraint!("and", right_val, right_constraint)
                         )
-                    ),
-                    Constraint::new("and", arg_bool_constraints.iter().flatten()),
-                ]
+                    )
+                )]
             }
             BinaryLiteral::Or => {
-                let (arg_bool_syms, arg_bool_constraints): (
-                    Vec<Vec<Symbol>>,
-                    Vec<Vec<Constraint>>,
-                ) = args
-                    .iter()
-                    .map(|arg| {
-                        destruct(cur_expr, declarations, &arg.val_sym, ReflTypeKind::Boolean)
-                    })
-                    .unzip();
-                vec![
+                let [left_res, right_res] = args[..] else {
+                    panic!()
+                };
+                let (left_val, left_constraint) =
+                    destruct_bool(&left_res.val_sym, cur_expr, declarations);
+                let (right_val, right_constraint) =
+                    destruct_bool(&right_res.val_sym, cur_expr, declarations);
+
+                vec![constraint!(
+                    "=",
+                    cur_val_sym,
                     constraint!(
-                        "=",
-                        cur_val_sym,
+                        "bool",
                         constraint!(
-                            "bool",
-                            Constraint::new("or", arg_bool_syms.iter().flatten())
+                            "or",
+                            constraint!("and", left_val, left_constraint),
+                            constraint!("and", right_val, right_constraint)
+                        )
+                    )
+                )]
+            }
+            BinaryLiteral::Add => {
+                let [left_res, right_res] = args[..] else {
+                    panic!()
+                };
+
+                let (left_int_val, left_int_constraint) =
+                    destruct_int(&left_res.val_sym, cur_expr, declarations);
+                let (left_float_val, left_float_constraint) =
+                    destruct_float(&left_res.val_sym, cur_expr, declarations);
+                let (left_str_val, left_str_bytes, left_str_constraint) =
+                    destruct_string(&left_res.val_sym, cur_expr, declarations);
+
+                let (right_int_val, right_int_constraint) =
+                    destruct_int(&right_res.val_sym, cur_expr, declarations);
+                let (right_float_val, right_float_constraint) =
+                    destruct_float(&right_res.val_sym, cur_expr, declarations);
+                let (right_str_val, right_str_bytes, right_str_constraint) =
+                    destruct_string(&right_res.val_sym, cur_expr, declarations);
+
+                vec![constraint!(
+                    "or",
+                    constraint!(
+                        "and",
+                        left_int_constraint,
+                        right_int_constraint,
+                        constraint!(
+                            "=",
+                            cur_val_sym,
+                            constraint!("int", constraint!("+", left_int_val, right_int_val))
                         )
                     ),
-                    Constraint::new("and", arg_bool_constraints.iter().flatten()),
-                ]
+                    constraint!(
+                        "and",
+                        left_float_constraint,
+                        right_float_constraint,
+                        constraint!(
+                            "=",
+                            cur_val_sym,
+                            constraint!(
+                                "float",
+                                constraint!(
+                                    "fp.add roundNearestTiesToEven",
+                                    left_float_val,
+                                    right_float_val
+                                )
+                            )
+                        )
+                    ),
+                    constraint!(
+                        "and",
+                        left_str_constraint,
+                        right_str_constraint,
+                        constraint!(
+                            "=",
+                            cur_val_sym,
+                            constraint!(
+                                "str",
+                                constraint!("str.++", left_str_val, right_str_val),
+                                constraint!("+", left_str_bytes, right_str_bytes)
+                            )
+                        ),
+                        constraint!(
+                            "=",
+                            cur_bytes_sym,
+                            constraint!("+", left_str_bytes, right_str_bytes)
+                        )
+                    )
+                )]
             }
-            BinaryLiteral::Add => todo!(),
             BinaryLiteral::Sub => todo!(),
             BinaryLiteral::Mul => todo!(),
             BinaryLiteral::Div => todo!(),
@@ -597,10 +688,33 @@ fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                 constraint!("=", cur_val_sym, constraint!("int", lit)),
                 constraint!("=", cur_bytes_sym, 8),
             ],
-            crate::ast::Literal::Float(lit) => vec![
-                constraint!("=", cur_val_sym, constraint!("float", lit)),
-                constraint!("=", cur_bytes_sym, 8),
-            ],
+            crate::ast::Literal::Float(lit) => {
+                let lit_as_bits: String = lit
+                    .to_be_bytes()
+                    .iter()
+                    .map(|b| format!("{:08b}", b))
+                    .collect::<Vec<String>>()
+                    .join("");
+                vec![
+                    constraint!(
+                        "=",
+                        cur_val_sym,
+                        constraint!(
+                            "float",
+                            Constraint::mono(
+                                format!(
+                                    "(fp #b{} #b{} #b{})",
+                                    lit_as_bits[0..1].to_owned(),
+                                    lit_as_bits[1..12].to_owned(),
+                                    lit_as_bits[12..].to_owned()
+                                )
+                                .as_str()
+                            )
+                        )
+                    ),
+                    constraint!("=", cur_bytes_sym, 8),
+                ]
+            }
             crate::ast::Literal::String(lit) => vec![
                 constraint!(
                     "=",
@@ -1266,7 +1380,9 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
         }
     }
 
-    if is_always_false_unsat == false {
+    let check_limit_mode = false;
+
+    if is_always_false_unsat == false && check_limit_mode {
         // 1MB limit
         {
             info!("check 1MB limit");
