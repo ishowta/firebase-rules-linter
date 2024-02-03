@@ -2,18 +2,266 @@ use std::{cell::RefCell, collections::HashMap, io::Write, process::Command};
 
 use log::{debug, info};
 use miette::{Diagnostic, SourceSpan};
+use nanoid::{alphabet, nanoid};
 use tempfile::NamedTempFile;
 use thiserror::Error;
 
 use crate::{
-    ast::{Ast, Expression, ExpressionKind, Literal, Node, NodeID, Rule, RuleGroup},
+    ast::{BinaryLiteral, Expression, ExpressionKind, Node, NodeID, Rule, RuleGroup},
     symbol::{Bindings, SymbolReferences, VariableNodeRef},
     ty::FunctionKind,
 };
 
-type Symbol = String;
-type Declaration = String;
-type Constraint = String;
+trait Ast {
+    fn as_smtlib2(&self) -> String;
+}
+
+impl Ast for String {
+    fn as_smtlib2(&self) -> String {
+        format!("\"{}\"", self)
+    }
+}
+
+impl Ast for &str {
+    fn as_smtlib2(&self) -> String {
+        format!("\"{}\"", self)
+    }
+}
+
+impl Ast for usize {
+    fn as_smtlib2(&self) -> String {
+        format!("{}", self)
+    }
+}
+
+impl Ast for i64 {
+    fn as_smtlib2(&self) -> String {
+        format!("{}", self)
+    }
+}
+
+impl Ast for i32 {
+    fn as_smtlib2(&self) -> String {
+        format!("{}", self)
+    }
+}
+
+impl Ast for f64 {
+    fn as_smtlib2(&self) -> String {
+        format!("{}", self)
+    }
+}
+
+impl Ast for bool {
+    fn as_smtlib2(&self) -> String {
+        format!("{}", self)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct Symbol {
+    smtlib2: String,
+}
+
+impl Symbol {
+    pub fn new(node: &dyn Node) -> Symbol {
+        Symbol {
+            smtlib2: format!("{}-{}", node.get_id().0, nanoid!(6, &alphabet::SAFE[12..])),
+        }
+    }
+}
+
+impl Ast for Symbol {
+    fn as_smtlib2(self: &Self) -> String {
+        self.smtlib2.clone()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum Sort {
+    Bool,
+    Int,
+    Float64,
+    String,
+    Seq(Box<Sort>),
+    List(Box<Sort>),
+    Entry(Box<Sort>),
+    Refl,
+    Map,
+}
+
+impl Ast for Sort {
+    fn as_smtlib2(self: &Self) -> String {
+        match self {
+            Sort::Bool => "Bool".to_owned(),
+            Sort::Int => "Int".to_owned(),
+            Sort::String => "String".to_owned(),
+            Sort::Float64 => "Float64".to_owned(),
+            Sort::Seq(sort) => format!("(Seq {})", sort.as_smtlib2()),
+            Sort::List(sort) => format!("(List {})", sort.as_smtlib2()),
+            Sort::Entry(sort) => format!("(Entry String {})", sort.as_smtlib2()),
+            Sort::Refl => "Refl".to_owned(),
+            Sort::Map => Sort::List(Box::new(Sort::Entry(Box::new(Sort::Refl)))).as_smtlib2(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct Declaration {
+    smtlib2: String,
+}
+
+impl Declaration {
+    pub fn new(symbol: &Symbol, sort: &Sort) -> Declaration {
+        Declaration {
+            smtlib2: format!(
+                "(declare-const {} {})",
+                symbol.as_smtlib2(),
+                sort.as_smtlib2()
+            ),
+        }
+    }
+}
+
+impl Ast for Declaration {
+    fn as_smtlib2(self: &Self) -> String {
+        self.smtlib2.clone()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct Literal {
+    smtlib2: String,
+}
+
+impl From<String> for Literal {
+    fn from(value: String) -> Self {
+        Literal {
+            smtlib2: format!("\"{}\"", value),
+        }
+    }
+}
+
+impl From<usize> for Literal {
+    fn from(value: usize) -> Self {
+        Literal {
+            smtlib2: value.to_string(),
+        }
+    }
+}
+
+impl Ast for Literal {
+    fn as_smtlib2(self: &Self) -> String {
+        self.smtlib2.clone()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct Constraint {
+    smtlib2: String,
+}
+
+impl Constraint {
+    pub fn mono(name: &str) -> Constraint {
+        Constraint {
+            smtlib2: name.to_string(),
+        }
+    }
+
+    pub fn new<'a, T: 'a>(func_name: &str, args: impl Iterator<Item = &'a T>) -> Constraint
+    where
+        T: Ast,
+    {
+        let mut smtlib2 = args.fold(
+            {
+                let mut res = "(".to_owned();
+                res.push_str(func_name);
+                res
+            },
+            |mut acc, arg| {
+                acc.push_str(" ");
+                acc.push_str(arg.as_smtlib2().as_str());
+                acc
+            },
+        );
+        smtlib2.push_str(")");
+
+        // if smtlib2.len() > 80 {
+        //     smtlib2 = args.fold(
+        //         {
+        //             let mut res = "(".to_owned();
+        //             res.push_str(func_name);
+        //             res.push_str("\n");
+        //             res
+        //         },
+        //         |mut acc, arg| {
+        //             acc.push_str("    ");
+        //             acc.push_str(
+        //                 arg.as_smtlib2()
+        //                     .split("\n")
+        //                     .fold("".to_owned(), |mut acc, line| {
+        //                         acc.push_str(line);
+        //                         acc.push_str("\n    ");
+        //                         acc
+        //                     })
+        //                     .as_str(),
+        //             );
+        //             acc.push_str("\n");
+        //             acc
+        //         },
+        //     );
+        //     smtlib2.push_str(")");
+        // }
+
+        Constraint { smtlib2: smtlib2 }
+    }
+}
+
+impl From<Literal> for Constraint {
+    fn from(value: Literal) -> Self {
+        Constraint {
+            smtlib2: value.as_smtlib2(),
+        }
+    }
+}
+
+macro_rules! constraint {
+    ($func_name:expr, $($args:expr),*) => {{
+        let mut smtlib2 = "(".to_string();
+        smtlib2.push_str($func_name);
+        $(
+            smtlib2.push_str(" ");
+            smtlib2.push_str($args.as_smtlib2().as_str());
+        )*
+        smtlib2.push_str(")");
+        Constraint { smtlib2: smtlib2 }
+    }}
+}
+
+impl Ast for Constraint {
+    fn as_smtlib2(self: &Self) -> String {
+        self.smtlib2.clone()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct Assert {
+    smtlib2: String,
+}
+
+impl Assert {
+    pub fn new(constraint: &Constraint) -> Assert {
+        Assert {
+            smtlib2: format!("(assert {})", constraint.as_smtlib2()),
+        }
+    }
+}
+
+impl Ast for Assert {
+    fn as_smtlib2(self: &Self) -> String {
+        self.smtlib2.clone()
+    }
+}
 
 #[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq, Hash)]
 #[error("{reason}")]
@@ -34,9 +282,16 @@ impl AnalysysError {
 }
 
 #[derive(Clone, Debug)]
+struct ValSyms {
+    val_sym: Symbol,
+    bytes_sym: Symbol,
+}
+
+#[derive(Clone, Debug)]
 struct Res {
     val_sym: Symbol,
     bytes_sym: Symbol,
+    constraints: Vec<Constraint>,
 }
 
 #[derive(Clone, Debug)]
@@ -52,29 +307,164 @@ struct AnalysysContext<'a, 'ctx> {
     pub symbol_references: &'a SymbolReferences<'a>,
     pub source_code: &'a String,
     pub declarations: &'ctx RefCell<Vec<Declaration>>,
-    pub variable_bindings: &'ctx HashMap<&'a NodeID, &'ctx Res>,
+    pub variable_bindings: &'ctx HashMap<&'a NodeID, &'ctx ValSyms>,
 }
 
-fn or(params: &Vec<Constraint>) -> Constraint {
-    let mut res = "(or\n".to_owned();
-    for param in params {
-        res.push_str("  ");
-        res.push_str(param);
-        res.push_str("\n");
-    }
-    res += "\n)";
-    res
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReflTypeKind {
+    Undefined,
+    Null,
+    Boolean,
+    Bytes,
+    Duration,
+    Float,
+    Integer,
+    LatLng,
+    List,
+    Map,
+    MapDiff,
+    Path,
+    Set,
+    String,
+    Timestamp,
 }
 
-fn and(params: &Vec<Constraint>) -> Constraint {
-    let mut res = "(and\n".to_owned();
-    for param in params {
-        res.push_str("  ");
-        res.push_str(param);
-        res.push_str("\n");
+fn destruct(
+    expr: &dyn Node,
+    declarations: &mut Vec<Declaration>,
+    refl_sym: &Symbol,
+    refl_ty: ReflTypeKind,
+) -> (Vec<Symbol>, Vec<Constraint>) {
+    match refl_ty {
+        ReflTypeKind::Undefined
+        | ReflTypeKind::Null
+        | ReflTypeKind::Duration
+        | ReflTypeKind::LatLng
+        | ReflTypeKind::Timestamp
+        | ReflTypeKind::Path => (vec![], vec![]),
+        ReflTypeKind::Boolean => {
+            let dest_val_sym = Symbol::new(expr);
+            declarations.push(Declaration::new(&dest_val_sym, &Sort::Bool));
+            (
+                vec![dest_val_sym.clone()],
+                vec![constraint!(
+                    "=",
+                    refl_sym,
+                    constraint!("bool", dest_val_sym)
+                )],
+            )
+        }
+        ReflTypeKind::Bytes => {
+            let dest_val_sym = Symbol::new(expr);
+            let dest_bytes_sym = Symbol::new(expr);
+            declarations.push(Declaration::new(&dest_val_sym, &Sort::String));
+            declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
+            (
+                vec![dest_val_sym.clone(), dest_bytes_sym.clone()],
+                vec![constraint!(
+                    "=",
+                    refl_sym,
+                    constraint!("bytes", dest_val_sym, dest_bytes_sym)
+                )],
+            )
+        }
+        ReflTypeKind::Float => {
+            let dest_val_sym = Symbol::new(expr);
+            declarations.push(Declaration::new(&dest_val_sym, &Sort::Float64));
+            (
+                vec![dest_val_sym.clone()],
+                vec![constraint!(
+                    "=",
+                    refl_sym,
+                    constraint!("float", dest_val_sym)
+                )],
+            )
+        }
+        ReflTypeKind::Integer => {
+            let dest_val_sym = Symbol::new(expr);
+            declarations.push(Declaration::new(&dest_val_sym, &Sort::Int));
+            (
+                vec![dest_val_sym.clone()],
+                vec![constraint!("=", refl_sym, constraint!("int", dest_val_sym))],
+            )
+        }
+        ReflTypeKind::List => {
+            let dest_val_sym = Symbol::new(expr);
+            let dest_bytes_sym = Symbol::new(expr);
+            declarations.push(Declaration::new(
+                &dest_val_sym,
+                &Sort::Seq(Box::new(Sort::Refl)),
+            ));
+            declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
+            (
+                vec![dest_val_sym.clone(), dest_bytes_sym.clone()],
+                vec![constraint!(
+                    "=",
+                    refl_sym,
+                    constraint!("list", dest_val_sym, dest_bytes_sym)
+                )],
+            )
+        }
+        ReflTypeKind::Map => {
+            let dest_val_sym = Symbol::new(expr);
+            declarations.push(Declaration::new(&dest_val_sym, &Sort::Map));
+            (
+                vec![dest_val_sym.clone()],
+                vec![constraint!("=", refl_sym, constraint!("map", dest_val_sym))],
+            )
+        }
+        ReflTypeKind::MapDiff => {
+            let dest_lval_sym = Symbol::new(expr);
+            let dest_rval_sym = Symbol::new(expr);
+            let dest_bytes_sym = Symbol::new(expr);
+            declarations.push(Declaration::new(&dest_lval_sym, &Sort::Map));
+            declarations.push(Declaration::new(&dest_rval_sym, &Sort::Map));
+            declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
+            (
+                vec![
+                    dest_lval_sym.clone(),
+                    dest_rval_sym.clone(),
+                    dest_bytes_sym.clone(),
+                ],
+                vec![constraint!(
+                    "=",
+                    refl_sym,
+                    constraint!("mapdiff", dest_lval_sym, dest_rval_sym, dest_bytes_sym)
+                )],
+            )
+        }
+        ReflTypeKind::Set => {
+            let dest_val_sym = Symbol::new(expr);
+            let dest_bytes_sym = Symbol::new(expr);
+            declarations.push(Declaration::new(
+                &dest_val_sym,
+                &Sort::Seq(Box::new(Sort::Refl)),
+            ));
+            declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
+            (
+                vec![dest_val_sym.clone(), dest_bytes_sym.clone()],
+                vec![constraint!(
+                    "=",
+                    refl_sym,
+                    constraint!("set", dest_val_sym, dest_bytes_sym)
+                )],
+            )
+        }
+        ReflTypeKind::String => {
+            let dest_val_sym = Symbol::new(expr);
+            let dest_bytes_sym = Symbol::new(expr);
+            declarations.push(Declaration::new(&dest_val_sym, &Sort::String));
+            declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
+            (
+                vec![dest_val_sym.clone(), dest_bytes_sym.clone()],
+                vec![constraint!(
+                    "=",
+                    refl_sym,
+                    constraint!("str", dest_val_sym, dest_bytes_sym)
+                )],
+            )
+        }
     }
-    res += "\n)";
-    res
 }
 
 fn check_function_calling(
@@ -84,169 +474,200 @@ fn check_function_calling(
     args: &Vec<&Res>,
     cur_val_sym: &Symbol,
     cur_bytes_sym: &Symbol,
+    declarations: &mut Vec<Declaration>,
 ) -> Vec<Constraint> {
-    match func {
+    let mut constraints: Vec<Constraint> = args
+        .iter()
+        .flat_map(|res| res.constraints.clone())
+        .collect();
+    constraints.extend(match func {
         FunctionKind::Function(_) => todo!(),
         FunctionKind::UnaryOp(_) => todo!(),
         FunctionKind::BinaryOp(binary_op) => match binary_op {
-            crate::ast::BinaryLiteral::LogicalAnd => {
-                let arg_bool_syms: Vec<_> = args
+            BinaryLiteral::LogicalAnd => {
+                let (arg_bool_syms, arg_bool_constraints): (
+                    Vec<Vec<Symbol>>,
+                    Vec<Vec<Constraint>>,
+                ) = args
                     .iter()
                     .map(|arg| {
-                        (
-                            arg.val_sym.clone(),
-                            format!("{}_{}_bool_sym", cur_expr.get_id().0, arg.val_sym),
+                        destruct(cur_expr, declarations, &arg.val_sym, ReflTypeKind::Boolean)
+                    })
+                    .unzip();
+                vec![
+                    constraint!(
+                        "=",
+                        cur_val_sym,
+                        constraint!(
+                            "bool",
+                            Constraint::new("and", arg_bool_syms.iter().flatten())
                         )
-                    })
-                    .collect();
-                let mut declarations: Vec<_> = arg_bool_syms
-                    .iter()
-                    .flat_map(|(arg_val_sym, arg_bool_sym)| {
-                        vec![
-                            format!("(declare-const {} Bool)", arg_bool_sym),
-                            format!("(assert (= {} (bool {})))", arg_val_sym, arg_bool_sym),
-                        ]
-                    })
-                    .collect();
-                declarations.push(format!(
-                    "(assert (= {} (bool {})))",
-                    cur_val_sym,
-                    and(&arg_bool_syms
-                        .iter()
-                        .map(|(_, arg_bool_sym)| arg_bool_sym.clone())
-                        .collect())
-                ));
-                declarations
+                    ),
+                    Constraint::new("and", arg_bool_constraints.iter().flatten()),
+                ]
             }
-            crate::ast::BinaryLiteral::LogicalOr => todo!(),
-            crate::ast::BinaryLiteral::BitwiseAnd => todo!(),
-            crate::ast::BinaryLiteral::BitwiseOr => todo!(),
-            crate::ast::BinaryLiteral::BitwiseXor => todo!(),
-            crate::ast::BinaryLiteral::Add => todo!(),
-            crate::ast::BinaryLiteral::Sub => todo!(),
-            crate::ast::BinaryLiteral::Mul => todo!(),
-            crate::ast::BinaryLiteral::Div => todo!(),
-            crate::ast::BinaryLiteral::Mod => todo!(),
-            crate::ast::BinaryLiteral::Gt => todo!(),
-            crate::ast::BinaryLiteral::Gte => todo!(),
-            crate::ast::BinaryLiteral::Lt => todo!(),
-            crate::ast::BinaryLiteral::Lte => todo!(),
-            crate::ast::BinaryLiteral::Eq => vec![
-                format!(
-                    "(assert (= {} (bool (= {} {}))))",
-                    cur_val_sym, args[0].val_sym, args[1].val_sym
-                ),
-                format!("(assert (= {} {}))", args[0].bytes_sym, args[1].bytes_sym),
-                format!("(assert (= {} 1))", cur_bytes_sym),
-            ],
-            crate::ast::BinaryLiteral::NotEq => vec![
-                format!(
-                    "(assert (= {} (bool (not (= {} {})))))",
-                    cur_val_sym, args[0].val_sym, args[1].val_sym
-                ),
-                format!(
-                    "(assert (not (= {} {})))",
-                    args[0].bytes_sym, args[1].bytes_sym
-                ),
-                format!("(assert (= {} 1))", cur_bytes_sym),
-            ],
-            crate::ast::BinaryLiteral::In => todo!(),
+            BinaryLiteral::LogicalOr => {
+                let (arg_bool_syms, arg_bool_constraints): (
+                    Vec<Vec<Symbol>>,
+                    Vec<Vec<Constraint>>,
+                ) = args
+                    .iter()
+                    .map(|arg| {
+                        destruct(cur_expr, declarations, &arg.val_sym, ReflTypeKind::Boolean)
+                    })
+                    .unzip();
+                vec![
+                    constraint!(
+                        "=",
+                        cur_val_sym,
+                        constraint!(
+                            "bool",
+                            Constraint::new("or", arg_bool_syms.iter().flatten())
+                        )
+                    ),
+                    Constraint::new("and", arg_bool_constraints.iter().flatten()),
+                ]
+            }
+            BinaryLiteral::BitwiseAnd => todo!(),
+            BinaryLiteral::BitwiseOr => todo!(),
+            BinaryLiteral::BitwiseXor => todo!(),
+            BinaryLiteral::Add => todo!(),
+            BinaryLiteral::Sub => todo!(),
+            BinaryLiteral::Mul => todo!(),
+            BinaryLiteral::Div => todo!(),
+            BinaryLiteral::Mod => todo!(),
+            BinaryLiteral::Gt => todo!(),
+            BinaryLiteral::Gte => todo!(),
+            BinaryLiteral::Lt => todo!(),
+            BinaryLiteral::Lte => todo!(),
+            BinaryLiteral::Eq => {
+                vec![
+                    constraint!(
+                        "=",
+                        cur_val_sym,
+                        constraint!("bool", constraint!("=", &args[0].val_sym, &args[1].val_sym))
+                    ),
+                    constraint!("=", &args[0].bytes_sym, &args[1].bytes_sym),
+                    constraint!("=", cur_bytes_sym, 1),
+                ]
+            }
+            BinaryLiteral::NotEq => {
+                vec![
+                    constraint!(
+                        "=",
+                        cur_val_sym,
+                        constraint!(
+                            "bool",
+                            constraint!(
+                                "not",
+                                constraint!("=", &args[0].val_sym, &args[1].val_sym)
+                            )
+                        )
+                    ),
+                    constraint!("=", &args[0].bytes_sym, &args[1].bytes_sym),
+                    constraint!("=", cur_bytes_sym, 1),
+                ]
+            }
+            BinaryLiteral::In => todo!(),
         },
         FunctionKind::Subscript => todo!(),
         FunctionKind::SubscriptRange => todo!(),
-    }
+    });
+    constraints
 }
 
 fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
-    let cur_val_sym = format!("{}_val", cur_expr.get_id().0);
-    let cur_bytes_sym = format!("{}_bytes", cur_expr.get_id().0);
+    let cur_val_sym = Symbol::new(cur_expr);
+    let cur_bytes_sym = Symbol::new(cur_expr);
     ctx.declarations
         .borrow_mut()
-        .push(format!("(declare-const {} Refl)", cur_val_sym));
+        .push(Declaration::new(&cur_val_sym, &Sort::Refl));
     ctx.declarations
         .borrow_mut()
-        .push(format!("(declare-const {} Int)", cur_bytes_sym));
+        .push(Declaration::new(&cur_bytes_sym, &Sort::Int));
 
-    let mut declarations = match &cur_expr.kind {
+    let constraints = match &cur_expr.kind {
         ExpressionKind::Literal(lit) => match lit {
-            Literal::Null => vec![
-                format!("(assert (= {} null))", cur_val_sym),
-                format!("(assert (= {} 1))", cur_bytes_sym),
+            crate::ast::Literal::Null => vec![
+                constraint!("=", cur_val_sym, Constraint::mono("null")),
+                constraint!("=", cur_bytes_sym, 1),
             ],
-            Literal::Bool(lit) => vec![
-                format!("(assert (= {} (bool {})))", cur_val_sym, lit),
-                format!("(assert (= {} 1))", cur_bytes_sym),
+            crate::ast::Literal::Bool(lit) => vec![
+                constraint!("=", cur_val_sym, constraint!("bool", lit)),
+                constraint!("=", cur_bytes_sym, 1),
             ],
-            Literal::Int(lit) => vec![
-                format!("(assert (= {} (int {})))", cur_val_sym, lit),
-                format!("(assert (= {} 8))", cur_bytes_sym),
+            crate::ast::Literal::Int(lit) => vec![
+                constraint!("=", cur_val_sym, constraint!("int", lit)),
+                constraint!("=", cur_bytes_sym, 8),
             ],
-            Literal::Float(lit) => vec![
-                format!("(assert (= {} (float {})))", cur_val_sym, lit),
-                format!("(assert (= {} 8))", cur_bytes_sym),
+            crate::ast::Literal::Float(lit) => vec![
+                constraint!("=", cur_val_sym, constraint!("float", lit)),
+                constraint!("=", cur_bytes_sym, 8),
             ],
-            Literal::String(lit) => vec![
-                format!(
-                    "(assert (= {} (str \"{}\" {})))",
+            crate::ast::Literal::String(lit) => vec![
+                constraint!(
+                    "=",
                     cur_val_sym,
-                    lit,
-                    lit.len()
+                    constraint!("str", lit, Literal::from(lit.len()))
                 ),
-                format!("(assert (= {} {}))", cur_bytes_sym, lit.len()),
+                constraint!("=", cur_bytes_sym, Literal::from(lit.len())),
             ],
-            Literal::List(lit) => {
+            crate::ast::Literal::List(lit) => {
                 let elems_res: Vec<_> = lit
                     .iter()
                     .map(|elem_lit| check_expression(ctx, elem_lit))
                     .collect();
-                [
-                    format!(
-                        "(assert (= {} {}))",
+
+                vec![
+                    constraint!(
+                        "=",
                         cur_val_sym,
-                        elems_res
-                            .iter()
-                            .fold("(as seq.empty (Seq Refl))".to_owned(), |acc, elem| {
-                                format!("(seq.++ (seq.unit {}) {})", elem.val_sym, acc)
-                            })
+                        elems_res.iter().fold(
+                            constraint!("as seq.empty", Sort::Seq(Box::new(Sort::Refl))),
+                            |acc, elem| {
+                                constraint!("seq.++", constraint!("seq.unit", elem.val_sym), acc)
+                            },
+                        )
                     ),
-                    format!(
-                        "(assert (= {} {}))",
+                    constraint!(
+                        "=",
                         cur_bytes_sym,
-                        elems_res.iter().fold("".to_owned(), |acc, elem| {
-                            format!("(+ {} {})", elem.bytes_sym, acc)
-                        })
+                        elems_res.iter().fold(
+                            Constraint::from(Literal::from(0)),
+                            |acc, elem| constraint!("+", elem.bytes_sym, acc)
+                        )
                     ),
                 ]
-                .into()
             }
-            Literal::Map(lit) => {
+            crate::ast::Literal::Map(lit) => {
                 let elems_res: Vec<_> = lit
                     .iter()
                     .map(|(key, value_expr)| (key, check_expression(ctx, value_expr)))
                     .collect();
-                [
-                    format!(
-                        "(assert (= {} {}))",
+
+                vec![
+                    constraint!(
+                        "=",
                         cur_val_sym,
                         elems_res
                             .iter()
-                            .fold("nil".to_owned(), |acc, (key, value)| {
-                                format!("(cons (entry \"{}\" {}) {})", key, value.val_sym, acc)
-                            })
+                            .fold(Constraint::mono("nil"), |acc, (key, value)| {
+                                constraint!("cons", constraint!("entry", key, value.val_sym), acc)
+                            },)
                     ),
-                    format!(
-                        "(assert (= {} {}))",
+                    constraint!(
+                        "=",
                         cur_bytes_sym,
-                        elems_res.iter().fold("".to_owned(), |acc, (_, value)| {
-                            format!("(+ {} (+ 2 {}))", value.bytes_sym, acc)
-                        })
+                        elems_res.iter().fold(
+                            Constraint::from(Literal::from(0)),
+                            |acc, (_, value)| constraint!("+", 2, value.bytes_sym, acc)
+                        )
                     ),
                 ]
-                .into()
             }
-            Literal::Path(_) => vec![
-                format!("(assert (= cur_sym path))"),
-                format!("(assert (<= {} {}))", cur_bytes_sym, 6 * 1024),
+            crate::ast::Literal::Path(_) => vec![
+                constraint!("=", cur_val_sym, "path"),
+                constraint!("<=", cur_bytes_sym, 6 * 1024),
             ],
         },
         ExpressionKind::Variable(_) => match ctx
@@ -258,38 +679,45 @@ fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
             None => vec![],
             Some(variable_node_ref) => match variable_node_ref {
                 VariableNodeRef::LetBinding(node) => {
-                    let Res { val_sym, bytes_sym } = ctx.variable_bindings.get(&node.id).unwrap();
+                    let ValSyms { val_sym, bytes_sym } =
+                        ctx.variable_bindings.get(&node.id).unwrap();
                     vec![
-                        format!("(assert (= {} {}))", cur_val_sym, val_sym),
-                        format!("(assert (= {} {}))", cur_bytes_sym, bytes_sym),
+                        constraint!("=", cur_val_sym, val_sym),
+                        constraint!("=", cur_bytes_sym, bytes_sym),
                     ]
                 }
                 VariableNodeRef::FunctionArgument(node) => {
-                    let Res { val_sym, bytes_sym } = ctx.variable_bindings.get(&node.id).unwrap();
+                    let ValSyms { val_sym, bytes_sym } =
+                        ctx.variable_bindings.get(&node.id).unwrap();
                     vec![
-                        format!("(assert (= {} {}))", cur_val_sym, val_sym),
-                        format!("(assert (= {} {}))", cur_bytes_sym, bytes_sym),
+                        constraint!("=", cur_val_sym, val_sym),
+                        constraint!("=", cur_bytes_sym, bytes_sym),
                     ]
                 }
                 VariableNodeRef::PathCapture(node) => {
-                    let Res { val_sym, bytes_sym } = ctx.variable_bindings.get(&node.id).unwrap();
+                    let ValSyms { val_sym, bytes_sym } =
+                        ctx.variable_bindings.get(&node.id).unwrap();
                     vec![
-                        format!("(assert (= {} {}))", cur_val_sym, val_sym),
-                        format!("(assert (= {} {}))", cur_bytes_sym, bytes_sym),
+                        constraint!("=", cur_val_sym, val_sym),
+                        constraint!("=", cur_bytes_sym, bytes_sym),
                     ]
                 }
                 VariableNodeRef::PathCaptureGroup(node) => {
-                    let Res { val_sym, bytes_sym } = ctx.variable_bindings.get(&node.id).unwrap();
+                    let ValSyms { val_sym, bytes_sym } =
+                        ctx.variable_bindings.get(&node.id).unwrap();
                     vec![
-                        format!("(assert (= {} {}))", cur_val_sym, val_sym),
-                        format!("(assert (= {} {}))", cur_bytes_sym, bytes_sym),
+                        constraint!("=", cur_val_sym, val_sym),
+                        constraint!("=", cur_bytes_sym, bytes_sym),
                     ]
                 }
                 VariableNodeRef::GlobalVariable(_) => {
                     // TODO
-                    vec![format!(
-                        "(assert (= {} {}))",
-                        cur_val_sym, "request_resource_data"
+                    vec![constraint!(
+                        "=",
+                        cur_val_sym,
+                        Symbol {
+                            smtlib2: "request_resource_data".to_string()
+                        }
                     )]
                 }
             },
@@ -298,137 +726,130 @@ fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
             let target_res = check_expression(ctx, &target_expr);
             match type_name.as_str() {
                 "bool" => {
-                    let any_bool_sym = format!("{}_{}", target_res.val_sym, type_name);
+                    let inner_sym = Symbol::new(target_expr as &Expression);
                     ctx.declarations
                         .borrow_mut()
-                        .push(format!("(declare-const {} Bool)", any_bool_sym));
+                        .push(Declaration::new(&inner_sym, &Sort::Bool));
                     vec![
-                        format!(
-                            "(assert (= {} (bool {})))",
-                            target_res.val_sym, any_bool_sym
-                        ),
-                        format!("(assert (= {} {}))", target_res.bytes_sym, 1),
+                        constraint!("=", target_res.val_sym, constraint!("bool", inner_sym)),
+                        constraint!("=", target_res.bytes_sym, 1),
                     ]
                 }
                 "int" => {
-                    let any_int_sym = format!("{}_{}", target_res.val_sym, type_name);
+                    let inner_sym = Symbol::new(target_expr as &Expression);
                     ctx.declarations
                         .borrow_mut()
-                        .push(format!("(declare-const {} Int)", any_int_sym));
+                        .push(Declaration::new(&inner_sym, &Sort::Int));
                     vec![
-                        format!("(assert (= {} (int {})))", target_res.val_sym, any_int_sym),
-                        format!("(assert (= {} {}))", target_res.bytes_sym, 8),
+                        constraint!("=", target_res.val_sym, constraint!("int", inner_sym)),
+                        constraint!("=", target_res.bytes_sym, 8),
                     ]
                 }
                 "float" => {
-                    let any_float_sym = format!("{}_{}", target_res.val_sym, type_name);
+                    let inner_sym = Symbol::new(target_expr as &Expression);
                     ctx.declarations
                         .borrow_mut()
-                        .push(format!("(declare-const {} Float64)", any_float_sym));
+                        .push(Declaration::new(&inner_sym, &Sort::Float64));
                     vec![
-                        format!(
-                            "(assert (= {} (float {})))",
-                            target_res.val_sym, any_float_sym
-                        ),
-                        format!("(assert (= {} {}))", target_res.bytes_sym, 8),
+                        constraint!("=", target_res.val_sym, constraint!("float", inner_sym)),
+                        constraint!("=", target_res.bytes_sym, 8),
                     ]
                 }
                 "number" => {
-                    let any_int_sym = format!("{}_{}", target_res.val_sym, type_name);
+                    let inner_int_sym = Symbol::new(target_expr as &Expression);
+                    let inner_float_sym = Symbol::new(target_expr as &Expression);
                     ctx.declarations
                         .borrow_mut()
-                        .push(format!("(declare-const {} Int)", any_int_sym));
-                    let any_float_sym = format!("{}_{}", target_res.val_sym, type_name);
+                        .push(Declaration::new(&inner_int_sym, &Sort::Int));
                     ctx.declarations
                         .borrow_mut()
-                        .push(format!("(declare-const {} Float64)", any_float_sym));
+                        .push(Declaration::new(&inner_float_sym, &Sort::Float64));
                     vec![
-                        format!(
-                            "(assert {})",
-                            or(&vec![
-                                format!("(= {} (int {}))", target_res.val_sym, any_int_sym),
-                                format!("(= {} (float {}))", target_res.val_sym, any_float_sym),
-                            ])
+                        constraint!(
+                            "or",
+                            constraint!("=", target_res.val_sym, constraint!("int", inner_int_sym)),
+                            constraint!(
+                                "=",
+                                target_res.val_sym,
+                                constraint!("float", inner_float_sym)
+                            )
                         ),
-                        format!("(assert (= {} {}))", target_res.bytes_sym, 8),
+                        constraint!("=", target_res.bytes_sym, 8),
                     ]
                 }
                 "string" => {
-                    let any_str_sym = format!("{}_{}", target_res.val_sym, type_name);
+                    let inner_val_sym = Symbol::new(target_expr as &Expression);
+                    let inner_bytes_sym = Symbol::new(target_expr as &Expression);
                     ctx.declarations
                         .borrow_mut()
-                        .push(format!("(declare-const {} String)", any_str_sym));
-                    let any_str_bytes_sym = format!("{}_{}_bytes", target_res.val_sym, type_name);
+                        .push(Declaration::new(&inner_val_sym, &Sort::String));
                     ctx.declarations
                         .borrow_mut()
-                        .push(format!("(declare-const {} Int)", any_str_bytes_sym));
+                        .push(Declaration::new(&inner_bytes_sym, &Sort::Int));
                     vec![
-                        format!(
-                            "(assert (= {} (str {} {})))",
-                            target_res.val_sym, any_str_sym, any_str_bytes_sym
+                        constraint!(
+                            "=",
+                            target_res.val_sym,
+                            constraint!("str", inner_val_sym, inner_bytes_sym)
                         ),
-                        format!(
-                            "(assert (= {} {}))",
-                            target_res.bytes_sym, any_str_bytes_sym
-                        ),
+                        constraint!("=", target_res.bytes_sym, inner_bytes_sym),
                     ]
                 }
                 "list" => {
-                    let any_list_sym = format!("{}_{}", target_res.val_sym, type_name);
+                    let inner_val_sym = Symbol::new(target_expr as &Expression);
+                    let inner_bytes_sym = Symbol::new(target_expr as &Expression);
+                    ctx.declarations.borrow_mut().push(Declaration::new(
+                        &inner_val_sym,
+                        &Sort::Seq(Box::new(Sort::Refl)),
+                    ));
                     ctx.declarations
                         .borrow_mut()
-                        .push(format!("(declare-const {} (Seq Refl))", any_list_sym));
-                    let any_list_bytes_sym = format!("{}_{}", target_res.val_sym, type_name);
-                    ctx.declarations
-                        .borrow_mut()
-                        .push(format!("(declare-const {} Int)", any_list_bytes_sym));
+                        .push(Declaration::new(&inner_bytes_sym, &Sort::Int));
                     vec![
-                        format!(
-                            "(assert (= {} (list {} {})))",
-                            target_res.val_sym, any_list_sym, any_list_bytes_sym
+                        constraint!(
+                            "=",
+                            target_res.val_sym,
+                            constraint!("list", inner_val_sym, inner_bytes_sym)
                         ),
-                        format!(
-                            "(assert (= {} {}))",
-                            target_res.bytes_sym, any_list_bytes_sym
-                        ),
+                        constraint!("=", target_res.bytes_sym, inner_bytes_sym),
                     ]
                 }
                 "map" => {
-                    let any_map_sym = format!("{}_{}", target_res.val_sym, type_name);
-                    ctx.declarations.borrow_mut().push(format!(
-                        "(declare-const {} (List (Entry String Refl)))",
-                        any_map_sym
-                    ));
+                    let inner_sym = Symbol::new(target_expr as &Expression);
+                    ctx.declarations
+                        .borrow_mut()
+                        .push(Declaration::new(&inner_sym, &Sort::Map));
                     vec![
-                        format!("(assert (= {} (map {})))", target_res.val_sym, any_map_sym),
-                        format!(
-                            "(assert (= {} (list-sum {})))",
-                            target_res.bytes_sym, any_map_sym
+                        constraint!("=", target_res.val_sym, constraint!("map", inner_sym)),
+                        constraint!(
+                            "=",
+                            target_res.bytes_sym,
+                            constraint!("list-sum", inner_sym)
                         ),
                     ]
                 }
                 "timestamp" => {
                     vec![
-                        format!("(assert (= {} timestamp))", target_res.val_sym),
-                        format!("(assert (= {} {}))", target_res.bytes_sym, 8),
+                        constraint!("=", target_res.val_sym, Constraint::mono("timestamp")),
+                        constraint!("=", target_res.bytes_sym, 16),
                     ]
                 }
                 "duration" => {
                     vec![
-                        format!("(assert (= {} duration))", target_res.val_sym),
-                        format!("(assert (= {} {}))", target_res.bytes_sym, 8),
+                        constraint!("=", target_res.val_sym, Constraint::mono("duration")),
+                        constraint!("=", target_res.bytes_sym, 8),
                     ]
                 }
                 "path" => {
                     vec![
-                        format!("(assert (= {} path))", target_res.val_sym),
-                        format!("(assert (<= {} {}))", target_res.bytes_sym, 6 * 1024),
+                        constraint!("=", target_res.val_sym, Constraint::mono("path")),
+                        constraint!("<=", target_res.bytes_sym, 6 * 1024),
                     ]
                 }
                 "latlng" => {
                     vec![
-                        format!("(assert (= {} latlng))", target_res.val_sym),
-                        format!("(assert (= {} {}))", target_res.bytes_sym, 8),
+                        constraint!("=", target_res.val_sym, Constraint::mono("latlng")),
+                        constraint!("=", target_res.bytes_sym, 8),
                     ]
                 }
                 _ => vec![],
@@ -436,98 +857,168 @@ fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
         }
         ExpressionKind::UnaryOperation(op_lit, op_param_expr) => {
             let op_param_res = check_expression(ctx, &op_param_expr);
-            check_function_calling(
-                cur_expr,
-                ctx,
-                &FunctionKind::UnaryOp(*op_lit),
-                &vec![&op_param_res],
-                &cur_val_sym,
-                &cur_bytes_sym,
-            )
+            op_param_res
+                .constraints
+                .iter()
+                .chain(
+                    check_function_calling(
+                        cur_expr,
+                        ctx,
+                        &FunctionKind::UnaryOp(*op_lit),
+                        &vec![&op_param_res],
+                        &cur_val_sym,
+                        &cur_bytes_sym,
+                        ctx.declarations.borrow_mut().as_mut(),
+                    )
+                    .iter(),
+                )
+                .cloned()
+                .collect()
         }
         ExpressionKind::BinaryOperation(op_lit, op_param1_expr, op_param2_expr) => {
             let op_param1_res = check_expression(ctx, &op_param1_expr);
             let op_param2_res = check_expression(ctx, &op_param2_expr);
-            check_function_calling(
-                cur_expr,
-                ctx,
-                &FunctionKind::BinaryOp(*op_lit),
-                &vec![&op_param1_res, &op_param2_res],
-                &cur_val_sym,
-                &cur_bytes_sym,
-            )
+            op_param1_res
+                .constraints
+                .iter()
+                .chain(op_param2_res.constraints.iter())
+                .chain(
+                    check_function_calling(
+                        cur_expr,
+                        ctx,
+                        &FunctionKind::BinaryOp(*op_lit),
+                        &vec![&op_param1_res, &op_param2_res],
+                        &cur_val_sym,
+                        &cur_bytes_sym,
+                        ctx.declarations.borrow_mut().as_mut(),
+                    )
+                    .iter(),
+                )
+                .cloned()
+                .collect()
         }
         ExpressionKind::SubscriptExpression(obj_expr, param_expr) => {
             let obj_res = check_expression(ctx, &obj_expr);
             let param_res = check_expression(ctx, &param_expr);
-            check_function_calling(
-                cur_expr,
-                ctx,
-                &FunctionKind::Subscript,
-                &vec![&obj_res, &param_res],
-                &cur_val_sym,
-                &cur_bytes_sym,
-            )
+            obj_res
+                .constraints
+                .iter()
+                .chain(param_res.constraints.iter())
+                .chain(
+                    check_function_calling(
+                        cur_expr,
+                        ctx,
+                        &FunctionKind::Subscript,
+                        &vec![&obj_res, &param_res],
+                        &cur_val_sym,
+                        &cur_bytes_sym,
+                        ctx.declarations.borrow_mut().as_mut(),
+                    )
+                    .iter(),
+                )
+                .cloned()
+                .collect()
         }
         ExpressionKind::FunctionCallExpression(fn_name, params_expr) => {
             let params_res: Vec<_> = params_expr
                 .iter()
                 .map(|expr| check_expression(ctx, expr))
                 .collect();
-            check_function_calling(
-                cur_expr,
-                ctx,
-                &FunctionKind::Function(fn_name.clone()),
-                &params_res.iter().map(|x| x).collect(),
-                &cur_val_sym,
-                &cur_bytes_sym,
-            )
+            params_res
+                .iter()
+                .flat_map(|res| res.constraints.iter())
+                .chain(
+                    check_function_calling(
+                        cur_expr,
+                        ctx,
+                        &FunctionKind::Function(fn_name.clone()),
+                        &params_res.iter().map(|x| x).collect(),
+                        &cur_val_sym,
+                        &cur_bytes_sym,
+                        ctx.declarations.borrow_mut().as_mut(),
+                    )
+                    .iter(),
+                )
+                .cloned()
+                .collect()
         }
         ExpressionKind::TernaryOperation(cond_expr, left_expr, right_expr) => {
             let cond_res = check_expression(ctx, &cond_expr);
             let left_res = check_expression(ctx, &left_expr);
             let right_res = check_expression(ctx, &right_expr);
-            vec![
-                format!(
-                    "(assert (= {} (ite (= {} (bool true)) {} {})))",
-                    cur_val_sym, cond_res.val_sym, left_res.val_sym, right_res.val_sym
-                ),
-                format!(
-                    "(assert (= {} (ite (= {} (bool true)) {} {})))",
-                    cur_bytes_sym, cond_res.bytes_sym, left_res.bytes_sym, right_res.bytes_sym
-                ),
-            ]
+            cond_res
+                .constraints
+                .iter()
+                .chain(left_res.constraints.iter())
+                .chain(right_res.constraints.iter())
+                .chain(
+                    [
+                        constraint!(
+                            "=",
+                            cur_val_sym,
+                            constraint!(
+                                "ite",
+                                constraint!("=", cond_res.val_sym, constraint!("bool", true)),
+                                left_res.val_sym,
+                                right_res.val_sym
+                            )
+                        ),
+                        constraint!(
+                            "=",
+                            cur_bytes_sym,
+                            constraint!(
+                                "ite",
+                                constraint!("=", cond_res.val_sym, constraint!("bool", true)),
+                                left_res.bytes_sym,
+                                right_res.bytes_sym
+                            )
+                        ),
+                    ]
+                    .iter(),
+                )
+                .cloned()
+                .collect()
         }
         ExpressionKind::MemberExpression(obj_expr, member_expr) => match &member_expr.kind {
             ExpressionKind::Variable(variable_name) => {
                 let obj_res = check_expression(ctx, &obj_expr);
                 let member_res = check_expression(ctx, &member_expr);
 
-                let obj_inner_sym = format!("{}_inner", obj_expr.get_id().0);
+                let obj_inner_sym = Symbol::new(obj_expr as &Expression);
+                ctx.declarations
+                    .borrow_mut()
+                    .push(Declaration::new(&obj_inner_sym, &Sort::Map));
 
-                vec![
-                    format!(
-                        "(declare-const {} (List (Entry String Refl)))",
-                        obj_inner_sym
-                    ),
-                    format!("(assert (= {} (map {})))", obj_res.val_sym, obj_inner_sym),
-                    format!(
-                        "(assert (= {} (str \"{}\" {})))",
-                        member_res.val_sym, variable_name, member_res.bytes_sym
-                    ),
-                    format!(
-                        "(assert (= (list-get {} \"{}\") {}))",
-                        obj_inner_sym, variable_name, cur_val_sym
-                    ),
-                ]
+                obj_res
+                    .constraints
+                    .iter()
+                    .chain(member_res.constraints.iter())
+                    .chain(
+                        [
+                            constraint!("=", obj_res.val_sym, constraint!("map", obj_inner_sym)),
+                            constraint!(
+                                "=",
+                                member_res.val_sym,
+                                constraint!("str", variable_name, member_res.bytes_sym)
+                            ),
+                            constraint!(
+                                "=",
+                                constraint!("list-get", obj_inner_sym, variable_name),
+                                cur_val_sym
+                            ),
+                        ]
+                        .iter(),
+                    )
+                    .cloned()
+                    .collect()
             }
             _ => panic!(),
         },
     };
-    ctx.declarations.borrow_mut().append(&mut declarations);
     Res {
         val_sym: cur_val_sym,
         bytes_sym: cur_bytes_sym,
+        constraints: constraints,
     }
 }
 
@@ -592,8 +1083,9 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
         symbol_references: ctx.symbol_references,
         source_code: ctx.source_code,
         variable_bindings: &HashMap::new(),
-        declarations: &RefCell::new(vec![format!(
-            r#"
+        declarations: &RefCell::new(vec![Declaration {
+            smtlib2: format!(
+                r#"
 (declare-datatypes (T1 T2) ((Entry (entry (key T1) (value T2)))))
 
 (declare-datatypes ((Refl 0)) (
@@ -604,13 +1096,14 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
         (int (int_val Int))
         (float (float_val Float64))
         (str (str_val String) (str_bytes Int))
-        (char (char_val Unicode) (char_bytes Int))
+        (bytes (bytes_val String) (bytes_bytes Int))
         (duration)
         (latlng)
         (timestamp)
         (list (list_val (Seq Refl)) (list_bytes Int))
         (map (map_val (List (Entry String Refl))))
-        (mapdiff (mapdiff_left (List (Entry String Refl))) (mapdiff_right (List (Entry String Refl))))
+        (mapdiff (mapdiff_left (List (Entry String Refl))) (mapdiff_right (List (Entry String Refl))) (mapdiff_bytes Int))
+        (set (set_val (Seq Refl)) (set_bytes Int))
         (path)
     )
 ))
@@ -688,13 +1181,14 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
                     ((int x) 8)
                     ((float x) 8)
                     ((str v b) b)
-                    ((char v b) b)
+                    ((bytes v b) b)
                     (duration 8)
                     (latlng 16)
                     (timestamp 8)
                     ((list v b) b)
                     ((map x) (list-sum x))
-                    ((mapdiff l r) (* 1024 1024))
+                    ((mapdiff l r b) (* 1024 1024))
+                    ((set v b) (* 1024 1024))
                     (path (* 6 1024))
                 ))
                 (list-sum (tail lst))
@@ -717,26 +1211,46 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
 ;(assert (= (list-get request_inner "resource") request_resource))
 ;(assert (= request (map request_inner)))
 "#
-        )]),
+            ),
+        }]),
     };
 
     let Res {
         val_sym: condition_val_sym,
         bytes_sym: _,
+        constraints: condition_constraints,
     } = check_expression(&ctx, &rule.condition);
 
     let mut errors = vec![];
 
     // check always false
+    let mut is_always_false_unsat: bool = false;
     {
         info!("check always false");
         let source_code = format!(
             "{}
 
 {}
+
+{}
 ",
-            ctx.declarations.borrow().join("\n"),
-            format!("(assert (= {} (bool true)))", condition_val_sym)
+            ctx.declarations
+                .borrow()
+                .iter()
+                .map(|declaration| declaration.as_smtlib2())
+                .collect::<Vec<String>>()
+                .join("\n"),
+            condition_constraints
+                .iter()
+                .map(|constraint| Assert::new(constraint).as_smtlib2())
+                .collect::<Vec<String>>()
+                .join("\n"),
+            Assert::new(&constraint!(
+                "=",
+                condition_val_sym,
+                constraint!("bool", true)
+            ))
+            .as_smtlib2()
         );
         match solve(&source_code) {
             SolverResult::Sat(example) => {
@@ -745,6 +1259,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
             }
             SolverResult::Unsat => {
                 info!("unsat");
+                is_always_false_unsat = true;
                 errors.push(AnalysysError::new(format!("Always false"), rule))
             }
             SolverResult::Unknown => errors.push(AnalysysError::new(
@@ -754,32 +1269,61 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
         }
     }
 
-    // 1MB limit
-    {
-        info!("check 1MB limit");
-        let source_code = format!(
-            "{}
+    if is_always_false_unsat == false {
+        // 1MB limit
+        {
+            info!("check 1MB limit");
+            let source_code = format!(
+                "{}
+
+{}
 
 {}
 {}
 ",
-            ctx.declarations.borrow().join("\n"),
-            format!("(assert (= {} (bool true)))", condition_val_sym),
-            format!("(assert (> (list-sum request_resource_data_inner) 262144))")
-        );
-        match solve(&source_code) {
-            SolverResult::Sat(example) => {
-                errors.push(AnalysysError::new(format!("over 1MB limit"), rule));
-                info!("sat");
-                info!("truthly example:\n{}", example);
+                ctx.declarations
+                    .borrow()
+                    .iter()
+                    .map(|declaration| declaration.as_smtlib2())
+                    .collect::<Vec<String>>()
+                    .join("\n"),
+                condition_constraints
+                    .iter()
+                    .map(|constraint| Assert::new(constraint).as_smtlib2())
+                    .collect::<Vec<String>>()
+                    .join("\n"),
+                Assert::new(&constraint!(
+                    "=",
+                    condition_val_sym,
+                    constraint!("bool", true)
+                ))
+                .as_smtlib2(),
+                Assert::new(&constraint!(
+                    ">",
+                    constraint!(
+                        "list-sum",
+                        Symbol {
+                            smtlib2: "request_resource_data_inner".to_string()
+                        }
+                    ),
+                    1024 * 1024
+                ))
+                .as_smtlib2()
+            );
+            match solve(&source_code) {
+                SolverResult::Sat(example) => {
+                    errors.push(AnalysysError::new(format!("over 1MB limit"), rule));
+                    info!("sat");
+                    info!("truthly example:\n{}", example);
+                }
+                SolverResult::Unsat => {
+                    info!("unsat");
+                }
+                SolverResult::Unknown => errors.push(AnalysysError::new(
+                    format!("Static analysis failed because this conditions are too complex."),
+                    rule,
+                )),
             }
-            SolverResult::Unsat => {
-                info!("unsat");
-            }
-            SolverResult::Unknown => errors.push(AnalysysError::new(
-                format!("Static analysis failed because this conditions are too complex."),
-                rule,
-            )),
         }
     }
 
@@ -802,7 +1346,7 @@ fn check_rule_group(ctx: &AnalysysGlobalContext, rule_group: &RuleGroup) -> Vec<
         .collect()
 }
 
-pub fn analyze(ctx: &AnalysysGlobalContext, ast: &Ast) -> Vec<AnalysysError> {
+pub fn analyze(ctx: &AnalysysGlobalContext, ast: &crate::ast::Ast) -> Vec<AnalysysError> {
     ast.tree
         .services
         .iter()
