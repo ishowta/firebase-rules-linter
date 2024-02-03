@@ -85,7 +85,7 @@ impl TypeKind {
                             }),
                         )],
                     ),
-                    (FunctionKind::BinaryOp(BinaryLiteral::LogicalAnd), {
+                    (FunctionKind::BinaryOp(BinaryLiteral::And), {
                         vec![FunctionInterface(
                             (vec![TypeKind::Boolean(Unknown)], TypeKind::Boolean(Unknown)),
                             Box::new(move |_, params, _, _| match (lit, &params[..]) {
@@ -97,7 +97,7 @@ impl TypeKind {
                             }),
                         )]
                     }),
-                    (FunctionKind::BinaryOp(BinaryLiteral::LogicalOr), {
+                    (FunctionKind::BinaryOp(BinaryLiteral::Or), {
                         vec![FunctionInterface(
                             (vec![TypeKind::Boolean(Unknown)], TypeKind::Boolean(Unknown)),
                             Box::new(move |_, params, _, _| match (lit, &params[..]) {

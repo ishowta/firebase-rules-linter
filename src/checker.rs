@@ -766,8 +766,8 @@ fn check_expression_inner<'a, 'b>(
         }
         ExpressionKind::BinaryOperation(literal, left_expr, right_expr) => {
             if !*on_examination
-                && ((*literal == BinaryLiteral::LogicalOr && !flow_branch_reverse)
-                    || (*literal == BinaryLiteral::LogicalAnd && flow_branch_reverse))
+                && ((*literal == BinaryLiteral::Or && !flow_branch_reverse)
+                    || (*literal == BinaryLiteral::And && flow_branch_reverse))
             {
                 let _flow_branch_depth = *flow_branch_depth;
                 *flow_branch_depth += 1;
@@ -826,8 +826,8 @@ fn check_expression_inner<'a, 'b>(
                             context,
                             left_ty,
                             FunctionKind::BinaryOp(
-                                if flow_branch_reverse && *literal == BinaryLiteral::LogicalOr {
-                                    BinaryLiteral::LogicalAnd
+                                if flow_branch_reverse && *literal == BinaryLiteral::Or {
+                                    BinaryLiteral::And
                                 } else {
                                     *literal
                                 },
@@ -897,9 +897,8 @@ fn check_expression_inner<'a, 'b>(
                                 context,
                                 left_ty,
                                 FunctionKind::BinaryOp(
-                                    if flow_branch_reverse && *literal == BinaryLiteral::LogicalAnd
-                                    {
-                                        BinaryLiteral::LogicalOr
+                                    if flow_branch_reverse && *literal == BinaryLiteral::And {
+                                        BinaryLiteral::Or
                                     } else {
                                         *literal
                                     },
@@ -974,8 +973,8 @@ fn check_expression_inner<'a, 'b>(
                             context,
                             left_ty,
                             FunctionKind::BinaryOp(
-                                if flow_branch_reverse && *literal == BinaryLiteral::LogicalOr {
-                                    BinaryLiteral::LogicalAnd
+                                if flow_branch_reverse && *literal == BinaryLiteral::Or {
+                                    BinaryLiteral::And
                                 } else {
                                     *literal
                                 },
@@ -1049,8 +1048,8 @@ fn check_expression_inner<'a, 'b>(
                     context,
                     left_ty,
                     FunctionKind::BinaryOp(
-                        if flow_branch_reverse && *literal == BinaryLiteral::LogicalOr {
-                            BinaryLiteral::LogicalAnd
+                        if flow_branch_reverse && *literal == BinaryLiteral::Or {
+                            BinaryLiteral::And
                         } else {
                             *literal
                         },

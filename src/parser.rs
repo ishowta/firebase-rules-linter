@@ -117,11 +117,8 @@ fn parse_expression(node: &Node, context: &Context) -> Expression {
             ),
             "binary_expression" => ExpressionKind::BinaryOperation(
                 match node.child_by_field_name("operator").unwrap().kind() {
-                    "&&" => BinaryLiteral::LogicalAnd,
-                    "||" => BinaryLiteral::LogicalOr,
-                    "&" => BinaryLiteral::BitwiseAnd,
-                    "^" => BinaryLiteral::BitwiseOr,
-                    "|" => BinaryLiteral::BitwiseXor,
+                    "&&" => BinaryLiteral::And,
+                    "||" => BinaryLiteral::Or,
                     "+" => BinaryLiteral::Add,
                     "-" => BinaryLiteral::Sub,
                     "*" => BinaryLiteral::Mul,

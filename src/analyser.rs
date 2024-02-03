@@ -484,7 +484,7 @@ fn check_function_calling(
         FunctionKind::Function(_) => todo!(),
         FunctionKind::UnaryOp(_) => todo!(),
         FunctionKind::BinaryOp(binary_op) => match binary_op {
-            BinaryLiteral::LogicalAnd => {
+            BinaryLiteral::And => {
                 let (arg_bool_syms, arg_bool_constraints): (
                     Vec<Vec<Symbol>>,
                     Vec<Vec<Constraint>>,
@@ -506,7 +506,7 @@ fn check_function_calling(
                     Constraint::new("and", arg_bool_constraints.iter().flatten()),
                 ]
             }
-            BinaryLiteral::LogicalOr => {
+            BinaryLiteral::Or => {
                 let (arg_bool_syms, arg_bool_constraints): (
                     Vec<Vec<Symbol>>,
                     Vec<Vec<Constraint>>,
@@ -528,9 +528,6 @@ fn check_function_calling(
                     Constraint::new("and", arg_bool_constraints.iter().flatten()),
                 ]
             }
-            BinaryLiteral::BitwiseAnd => todo!(),
-            BinaryLiteral::BitwiseOr => todo!(),
-            BinaryLiteral::BitwiseXor => todo!(),
             BinaryLiteral::Add => todo!(),
             BinaryLiteral::Sub => todo!(),
             BinaryLiteral::Mul => todo!(),

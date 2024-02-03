@@ -199,11 +199,8 @@ impl Display for UnaryLiteral {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BinaryLiteral {
-    LogicalAnd,
-    LogicalOr,
-    BitwiseAnd,
-    BitwiseOr,
-    BitwiseXor,
+    And,
+    Or,
     Add,
     Sub,
     Mul,
@@ -221,11 +218,8 @@ pub enum BinaryLiteral {
 impl Display for BinaryLiteral {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BinaryLiteral::LogicalAnd => write!(f, "&&"),
-            BinaryLiteral::LogicalOr => write!(f, "||"),
-            BinaryLiteral::BitwiseAnd => write!(f, "&"),
-            BinaryLiteral::BitwiseOr => write!(f, "|"),
-            BinaryLiteral::BitwiseXor => write!(f, "^"),
+            BinaryLiteral::And => write!(f, "&&"),
+            BinaryLiteral::Or => write!(f, "||"),
             BinaryLiteral::Add => write!(f, "+"),
             BinaryLiteral::Sub => write!(f, "-"),
             BinaryLiteral::Mul => write!(f, "x"),
