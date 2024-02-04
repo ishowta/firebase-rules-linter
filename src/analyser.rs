@@ -488,20 +488,14 @@ fn check_function_calling(
         .collect();
     match func {
         FunctionKind::Function(fn_name) => match fn_name.as_str() {
-            "keys" => {
-                let [map_val] = args[..] else { panic!() };
-                let (map_inner, map_constraint) =
-                    destruct_map(&map_val.value, cur_expr, declarations);
-                let (cur_inner_value, _, cur_inner_constraint) =
-                    destruct_list(&cur_value, cur_expr, declarations);
-                constraints.extend([
-                    map_constraint,
-                    cur_inner_constraint,
-                    constraint!("=", cur_inner_value, constraint!("list-keys", map_inner)),
-                ]);
-                constraints
-            }
+            // bytes, list, map, set, string
+            "size" => todo!(),
+            // bytes
+            "toBase64" => todo!(),
+            "toHexString" => todo!(),
+            // list, set
             "hasOnly" => {
+                // TODO
                 let [target_val, keys_val] = args[..] else {
                     panic!()
                 };
@@ -523,7 +517,78 @@ fn check_function_calling(
                 ]);
                 constraints
             }
-            _ => todo!(),
+            "hasAll" => todo!(),
+            "hasAny" => todo!(),
+            // list
+            "concat" => todo!(),
+            "join" => todo!(),
+            "removeAll" => todo!(),
+            "toSet" => todo!(),
+            // set
+            "difference" => todo!(),
+            "intersection" => todo!(),
+            "union" => todo!(),
+            // string
+            "lower" => todo!(),
+            "matches" => todo!(),
+            "replace" => todo!(),
+            "split" => todo!(),
+            "toUtf8" => todo!(),
+            "trim" => todo!(),
+            "upper" => todo!(),
+            // map
+            "keys" => {
+                let [map_val] = args[..] else { panic!() };
+                let (map_inner, map_constraint) =
+                    destruct_map(&map_val.value, cur_expr, declarations);
+                let (cur_inner_value, _, cur_inner_constraint) =
+                    destruct_list(&cur_value, cur_expr, declarations);
+                constraints.extend([
+                    map_constraint,
+                    cur_inner_constraint,
+                    constraint!("=", cur_inner_value, constraint!("list-keys", map_inner)),
+                ]);
+                constraints
+            }
+            "diff" => todo!(),
+            "get" => todo!(),
+            "values" => todo!(),
+            // timestamp
+            "date" => {
+                constraints.push(constraint!("=", cur_value, Constraint::mono("timestamp")));
+                constraints
+            }
+            "day" => todo!(),
+            "dayOfWeek" => todo!(),
+            "dayOfYear" => todo!(),
+            "hours" => todo!(),
+            "minutes" => todo!(),
+            "month" => todo!(),
+            "time" => {
+                constraints.push(constraint!("=", cur_value, Constraint::mono("duration")));
+                constraints
+            }
+            "toMillis" => todo!(),
+            "year" => todo!(),
+            // timestamp, duration
+            "nanos" => todo!(),
+            "seconds" => todo!(),
+            // mapdiff
+            "addedKeys" => todo!(),
+            "affectedKeys" => todo!(),
+            "changedKeys" => todo!(),
+            "removedKeys" => todo!(),
+            "unchangedKeys" => todo!(),
+            // path
+            "bind" => {
+                constraints.push(constraint!("=", cur_value, Constraint::mono("path")));
+                constraints
+            }
+            // latlng
+            "distance" => todo!(),
+            "latitude" => todo!(),
+            "longitude" => todo!(),
+            _ => panic!(),
         },
         FunctionKind::UnaryOp(unary_op) => match unary_op {
             crate::ast::UnaryLiteral::Not => {
@@ -1062,8 +1127,137 @@ fn check_function_calling(
                 constraints
             }
         },
-        FunctionKind::Subscript => todo!(),
-        FunctionKind::SubscriptRange => todo!(),
+        FunctionKind::Subscript => {
+            let [obj_res, key_res] = args[..] else {
+                panic!()
+            };
+
+            let (key_str_val, _, key_str_constraint) =
+                destruct_string(&key_res.value, cur_expr, declarations);
+
+            let (key_int_val, _, key_int_constraint) =
+                destruct_string(&key_res.value, cur_expr, declarations);
+
+            let (obj_list_val, _, obj_list_constraint) =
+                destruct_list(&obj_res.value, cur_expr, declarations);
+
+            let (obj_map_val, obj_map_constraint) =
+                destruct_map(&obj_res.value, cur_expr, declarations);
+
+            let (obj_str_val, _, obj_str_constraint) =
+                destruct_string(&obj_res.value, cur_expr, declarations);
+
+            constraints.push(constraint!(
+                "or",
+                constraint!(
+                    "and",
+                    key_int_constraint,
+                    obj_list_constraint,
+                    constraint!(
+                        "=",
+                        cur_value,
+                        constraint!("refl-list-at", obj_list_val, key_int_val)
+                    )
+                ),
+                constraint!(
+                    "and",
+                    key_str_constraint,
+                    obj_map_constraint,
+                    constraint!(
+                        "=",
+                        cur_value,
+                        constraint!("list-get", obj_map_val, key_str_val)
+                    )
+                ),
+                constraint!(
+                    "and",
+                    key_str_constraint,
+                    constraint!("=", cur_value, Constraint::mono("path"))
+                ),
+                constraint!(
+                    "and",
+                    key_int_constraint,
+                    constraint!("=", cur_value, Constraint::mono("path"))
+                ),
+                constraint!(
+                    "and",
+                    key_int_constraint,
+                    obj_str_constraint,
+                    constraint!(
+                        "=",
+                        cur_value,
+                        constraint!("str.at", obj_str_val, key_int_val)
+                    )
+                )
+            ));
+            constraints
+        }
+        FunctionKind::SubscriptRange => {
+            let [obj_res, from_res, to_res] = args[..] else {
+                panic!()
+            };
+
+            let (from_int_val, from_int_constraint) =
+                destruct_int(&from_res.value, cur_expr, declarations);
+
+            let (to_int_val, to_int_constraint) =
+                destruct_int(&to_res.value, cur_expr, declarations);
+
+            let (obj_list_val, obj_list_bytes, obj_list_constraint) =
+                destruct_list(&obj_res.value, cur_expr, declarations);
+
+            let list_bytes_sym = Symbol::new(cur_expr);
+            declarations.push(Declaration::new(&list_bytes_sym, &Sort::Int));
+
+            let (obj_str_val, _, obj_str_constraint) =
+                destruct_string(&obj_res.value, cur_expr, declarations);
+
+            constraints.push(constraint!(
+                "or",
+                constraint!(
+                    "and",
+                    from_int_constraint,
+                    to_int_constraint,
+                    obj_list_constraint,
+                    constraint!(
+                        "=",
+                        cur_value,
+                        constraint!(
+                            "list",
+                            constraint!(
+                                "refl-list-range",
+                                obj_list_val,
+                                from_int_val,
+                                constraint!("-", to_int_val, from_int_val)
+                            ),
+                            list_bytes_sym
+                        )
+                    ),
+                    constraint!("<=", list_bytes_sym, obj_list_bytes)
+                ),
+                constraint!(
+                    "and",
+                    from_int_constraint,
+                    to_int_constraint,
+                    obj_str_constraint,
+                    constraint!(
+                        "=",
+                        cur_value,
+                        constraint!(
+                            "str",
+                            constraint!(
+                                "str.substr",
+                                obj_list_val,
+                                from_int_val,
+                                constraint!("-", to_int_val, from_int_val)
+                            ),
+                            constraint!("*", constraint!("-", to_int_val, from_int_val), 4)
+                        )
+                    )
+                )
+            ));
+            constraints
+        }
     }
 }
 
@@ -1547,6 +1741,47 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
             (= (key (head lst)) sk)
             (value (head lst))
             (list-get (tail lst) sk)
+        )
+    )
+)
+
+(define-fun-rec
+    refl-list-at
+    (
+        (lst (List Refl))
+        (index Int)
+    )
+    Refl
+    (if
+        (= lst (as nil (List Refl)))
+        undefined
+        (if
+            (= index 0)
+            (head lst)
+            (refl-list-at (tail lst) (- index 1))
+        )
+    )
+)
+
+(define-fun-rec
+    refl-list-range
+    (
+        (lst (List Refl))
+        (from Int)
+        (len Int)
+    )
+    (List Refl)
+    (if
+        (= lst (as nil (List Refl)))
+        (as nil (List Refl))
+        (if
+            (= from 0)
+            (if
+                (= len 0)
+                (as nil (List Refl))
+                (insert (head lst) (refl-list-range (tail lst) from (- len 1)))
+            )
+            (refl-list-range lst (- from 1) len)
         )
     )
 )
