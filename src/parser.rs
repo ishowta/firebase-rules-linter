@@ -107,7 +107,6 @@ fn parse_expression(node: &Node, context: &Context) -> Expression {
                     "!" => UnaryLiteral::Not,
                     "-" => UnaryLiteral::Minus,
                     "+" => UnaryLiteral::Plus,
-                    "~" => UnaryLiteral::Tilde,
                     _ => panic!(),
                 },
                 Box::new(parse_expression(

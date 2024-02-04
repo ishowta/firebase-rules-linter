@@ -502,8 +502,11 @@ fn check_function_calling(
     cur_value: &Symbol,
     declarations: &mut Vec<Declaration>,
 ) -> Vec<Constraint> {
-    let args_constraints: Vec<Vec<Constraint>> =
-        args.iter().map(|res| res.constraints.clone()).collect();
+    // FIXME: Because most functions crash when arguments are evaluated and fail, constraint is assigned first as a precondition.
+    let mut constraints: Vec<Constraint> = args
+        .iter()
+        .flat_map(|res| res.constraints.clone())
+        .collect();
     match func {
         FunctionKind::Function(fn_name) => match fn_name.as_str() {
             "keys" => {
@@ -512,15 +515,12 @@ fn check_function_calling(
                     destruct_map(&map_val.value, cur_expr, declarations);
                 let (cur_inner_value, _, cur_inner_constraint) =
                     destruct_list(&cur_value, cur_expr, declarations);
-                args_constraints
-                    .into_iter()
-                    .flatten()
-                    .chain([
-                        map_constraint,
-                        cur_inner_constraint,
-                        constraint!("=", cur_inner_value, constraint!("list-keys", map_inner)),
-                    ])
-                    .collect()
+                constraints.extend([
+                    map_constraint,
+                    cur_inner_constraint,
+                    constraint!("=", cur_inner_value, constraint!("list-keys", map_inner)),
+                ]);
+                constraints
             }
             "hasOnly" => {
                 let [target_val, keys_val] = args[..] else {
@@ -532,39 +532,33 @@ fn check_function_calling(
                     destruct_list(&keys_val.value, cur_expr, declarations);
                 let (cur_inner_val, cur_constraint) =
                     destruct_bool(&cur_value, cur_expr, declarations);
-                args_constraints
-                    .into_iter()
-                    .flatten()
-                    .chain([
-                        target_constraint,
-                        keys_constraint,
-                        cur_constraint,
-                        constraint!(
-                            "=",
-                            cur_inner_val,
-                            constraint!("refl-list-in-refl-list", target_inner_val, keys_inner_val) // constraint!(
-                                                                                                    //     "forall ((elem Refl))",
-                                                                                                    //     constraint!(
-                                                                                                    //         "implies",
-                                                                                                    //         constraint!(
-                                                                                                    //             "refl-list-exists",
-                                                                                                    //             target_inner_val,
-                                                                                                    //             Constraint::mono("elem")
-                                                                                                    //         ),
-                                                                                                    //         constraint!(
-                                                                                                    //             "refl-list-exists",
-                                                                                                    //             keys_inner_val,
-                                                                                                    //             Constraint::mono("elem")
-                                                                                                    //         )
-                                                                                                    //     )
-                                                                                                    // )
-                        ),
-                    ])
-                    .collect()
+                constraints.extend([
+                    target_constraint,
+                    keys_constraint,
+                    cur_constraint,
+                    constraint!(
+                        "=",
+                        cur_inner_val,
+                        constraint!("refl-list-in-refl-list", target_inner_val, keys_inner_val)
+                    ),
+                ]);
+                constraints
             }
             _ => todo!(),
         },
-        FunctionKind::UnaryOp(_) => todo!(),
+        FunctionKind::UnaryOp(unary_op) => match unary_op {
+            crate::ast::UnaryLiteral::Not => {
+                let [target] = args[..] else { panic!() };
+                let (target_val, target_destruct_constraint) =
+                    destruct_bool(&target.value, cur_expr, declarations);
+
+                constraints.push(target_destruct_constraint);
+                constraints.push(constraint!("=", cur_value, constraint!("not", target_val)));
+                constraints
+            }
+            crate::ast::UnaryLiteral::Plus => todo!(),
+            crate::ast::UnaryLiteral::Minus => todo!(),
+        },
         FunctionKind::BinaryOp(binary_op) => match binary_op {
             BinaryLiteral::And => {
                 let [left_res, right_res] = args[..] else {
@@ -575,22 +569,19 @@ fn check_function_calling(
                 let (right_val, right_constraint) =
                     destruct_bool(&right_res.value, cur_expr, declarations);
 
-                args_constraints
-                    .into_iter()
-                    .flatten()
-                    .chain([constraint!(
-                        "=",
-                        cur_value,
+                constraints.extend([constraint!(
+                    "=",
+                    cur_value,
+                    constraint!(
+                        "bool",
                         constraint!(
-                            "bool",
-                            constraint!(
-                                "and",
-                                constraint!("and", left_val, left_constraint),
-                                constraint!("and", right_val, right_constraint)
-                            )
+                            "and",
+                            constraint!("and", left_val, left_constraint),
+                            constraint!("and", right_val, right_constraint)
                         )
-                    )])
-                    .collect()
+                    )
+                )]);
+                constraints
             }
             BinaryLiteral::Or => {
                 let [left_res, right_res] = args[..] else {
@@ -612,13 +603,13 @@ fn check_function_calling(
                                 "and",
                                 left_val,
                                 left_constraint,
-                                Constraint::new("and", args_constraints[0].iter().collect())
+                                Constraint::new("and", args[0].constraints.iter().collect())
                             ),
                             constraint!(
                                 "and",
                                 right_val,
                                 right_constraint,
-                                Constraint::new("and", args_constraints[1].iter().collect())
+                                Constraint::new("and", args[1].constraints.iter().collect())
                             )
                         )
                     )
@@ -643,54 +634,51 @@ fn check_function_calling(
                 let (right_str_val, right_str_bytes, right_str_constraint) =
                     destruct_string(&right_res.value, cur_expr, declarations);
 
-                args_constraints
-                    .into_iter()
-                    .flatten()
-                    .chain([constraint!(
-                        "or",
+                constraints.extend([constraint!(
+                    "or",
+                    constraint!(
+                        "and",
+                        left_int_constraint,
+                        right_int_constraint,
                         constraint!(
-                            "and",
-                            left_int_constraint,
-                            right_int_constraint,
-                            constraint!(
-                                "=",
-                                cur_value,
-                                constraint!("int", constraint!("+", left_int_val, right_int_val))
-                            )
-                        ),
+                            "=",
+                            cur_value,
+                            constraint!("int", constraint!("+", left_int_val, right_int_val))
+                        )
+                    ),
+                    constraint!(
+                        "and",
+                        left_float_constraint,
+                        right_float_constraint,
                         constraint!(
-                            "and",
-                            left_float_constraint,
-                            right_float_constraint,
+                            "=",
+                            cur_value,
                             constraint!(
-                                "=",
-                                cur_value,
+                                "float",
                                 constraint!(
-                                    "float",
-                                    constraint!(
-                                        "fp.add roundNearestTiesToEven",
-                                        left_float_val,
-                                        right_float_val
-                                    )
-                                )
-                            )
-                        ),
-                        constraint!(
-                            "and",
-                            left_str_constraint,
-                            right_str_constraint,
-                            constraint!(
-                                "=",
-                                cur_value,
-                                constraint!(
-                                    "str",
-                                    constraint!("str.++", left_str_val, right_str_val),
-                                    constraint!("+", left_str_bytes, right_str_bytes)
+                                    "fp.add roundNearestTiesToEven",
+                                    left_float_val,
+                                    right_float_val
                                 )
                             )
                         )
-                    )])
-                    .collect()
+                    ),
+                    constraint!(
+                        "and",
+                        left_str_constraint,
+                        right_str_constraint,
+                        constraint!(
+                            "=",
+                            cur_value,
+                            constraint!(
+                                "str",
+                                constraint!("str.++", left_str_val, right_str_val),
+                                constraint!("+", left_str_bytes, right_str_bytes)
+                            )
+                        )
+                    )
+                )]);
+                constraints
             }
             BinaryLiteral::Sub => todo!(),
             BinaryLiteral::Mul => todo!(),
@@ -704,31 +692,25 @@ fn check_function_calling(
                 let [left_res, right_res] = args[..] else {
                     panic!()
                 };
-                let mut constraints = vec![constraint!(
+                constraints.push(constraint!(
                     "=",
                     cur_value,
                     constraint!("bool", constraint!("=", &left_res.value, &right_res.value))
-                )];
-                constraints.extend(left_res.constraints.iter().cloned());
-                constraints.extend(right_res.constraints.iter().cloned());
-                constraints.extend(args_constraints.into_iter().flatten());
+                ));
                 constraints
             }
             BinaryLiteral::NotEq => {
                 let [left_res, right_res] = args[..] else {
                     panic!()
                 };
-                let mut constraints = vec![constraint!(
+                constraints.push(constraint!(
                     "=",
                     cur_value,
                     constraint!(
                         "bool",
                         constraint!("not", constraint!("=", &left_res.value, &right_res.value))
                     )
-                )];
-                constraints.extend(left_res.constraints.iter().cloned());
-                constraints.extend(right_res.constraints.iter().cloned());
-                constraints.extend(args_constraints.into_iter().flatten());
+                ));
                 constraints
             }
             BinaryLiteral::In => todo!(),
@@ -1316,6 +1298,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
             0
             (+
                 2
+                (str.len (key (head lst)))
                 (match (value (head lst)) (
                     (undefined (* 1024 1024))
                     (null 1)
@@ -1361,6 +1344,63 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
         ((mapdiff l r b) (* 1024 1024))
         ((set v b) (* 1024 1024))
         (path (* 6 1024))
+    ))
+)
+
+(define-fun-rec
+    list-is-valid-data
+    (
+        (lst (List (Entry String Refl)))
+    )
+    Bool
+    (if
+        (= lst (as nil (List (Entry String Refl))))
+        true
+        (and
+            (match (value (head lst)) (
+                (undefined false)
+                (null true)
+                ((bool x) true)
+                ((int x) true)
+                ((float x) true)
+                ((str v b) true)
+                ((bytes v b) false)
+                (duration false)
+                (latlng true)
+                (timestamp true)
+                ((list v b) true)
+                ((map x) (list-is-valid-data x))
+                ((mapdiff l r b) false)
+                ((set v b) false)
+                (path true)
+            ))
+            (list-is-valid-data (tail lst))
+        )
+    )
+)
+
+(define-fun-rec
+    refl-is-valid-data
+    (
+        (refl Refl)
+    )
+    Bool
+    (match refl (
+        (undefined false)
+        (null true)
+        ((bool x) true)
+        ((int x) true)
+        ((float x) true)
+        ((str v b) true)
+        ((bytes v b) false)
+        (duration false)
+        (latlng true)
+        (timestamp true)
+        ((list v b) true)
+        ((map x) (list-is-valid-data x))
+        ((mapdiff l r b) false)
+        ((set v b) false)
+        (path true)
     ))
 )
 
@@ -1455,6 +1495,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
 ;(assert (= request (map request_inner)))
 
 (assert (refl-map-is-uniq request_resource_data))
+(assert (refl-is-valid-data request_resource_data))
 "#
             ),
         }]),

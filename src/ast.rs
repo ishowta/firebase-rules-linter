@@ -181,7 +181,6 @@ pub enum PathLiteral {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum UnaryLiteral {
     Not,
-    Tilde,
     Plus,
     Minus,
 }
@@ -190,7 +189,6 @@ impl Display for UnaryLiteral {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             UnaryLiteral::Not => write!(f, "!"),
-            UnaryLiteral::Tilde => write!(f, "~"),
             UnaryLiteral::Plus => write!(f, "+"),
             UnaryLiteral::Minus => write!(f, "-"),
         }
