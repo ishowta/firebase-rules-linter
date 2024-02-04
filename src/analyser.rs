@@ -83,7 +83,6 @@ enum Sort {
     Int,
     Float64,
     String,
-    Seq(Box<Sort>),
     List(Box<Sort>),
     Entry(Box<Sort>),
     Refl,
@@ -97,7 +96,6 @@ impl Ast for Sort {
             Sort::Int => "Int".to_owned(),
             Sort::String => "String".to_owned(),
             Sort::Float64 => "Float64".to_owned(),
-            Sort::Seq(sort) => format!("(Seq {})", sort.as_smtlib2()),
             Sort::List(sort) => format!("(List {})", sort.as_smtlib2()),
             Sort::Entry(sort) => format!("(Entry String {})", sort.as_smtlib2()),
             Sort::Refl => "Refl".to_owned(),
@@ -113,12 +111,24 @@ struct Declaration {
 
 impl Declaration {
     pub fn new(symbol: &Symbol, sort: &Sort) -> Declaration {
-        Declaration {
-            smtlib2: format!(
-                "(declare-const {} {})",
-                symbol.as_smtlib2(),
-                sort.as_smtlib2()
-            ),
+        if *sort == Sort::Map {
+            Declaration {
+                smtlib2: format!(
+                    "(declare-const {} {})
+(assert (map-is-uniq {}))",
+                    symbol.as_smtlib2(),
+                    sort.as_smtlib2(),
+                    symbol.as_smtlib2(),
+                ),
+            }
+        } else {
+            Declaration {
+                smtlib2: format!(
+                    "(declare-const {} {})",
+                    symbol.as_smtlib2(),
+                    sort.as_smtlib2()
+                ),
+            }
         }
     }
 }
@@ -168,11 +178,11 @@ impl Constraint {
         }
     }
 
-    pub fn new<'a, T: 'a>(func_name: &str, args: impl Iterator<Item = &'a T>) -> Constraint
+    pub fn new<T>(func_name: &str, args: Vec<&T>) -> Constraint
     where
         T: Ast,
     {
-        let mut smtlib2 = args.fold(
+        let mut smtlib2 = args.iter().fold(
             {
                 let mut res = "(".to_owned();
                 res.push_str(func_name);
@@ -186,32 +196,31 @@ impl Constraint {
         );
         smtlib2.push_str(")");
 
-        // if smtlib2.len() > 80 {
-        //     smtlib2 = args.fold(
-        //         {
-        //             let mut res = "(".to_owned();
-        //             res.push_str(func_name);
-        //             res.push_str("\n");
-        //             res
-        //         },
-        //         |mut acc, arg| {
-        //             acc.push_str("    ");
-        //             acc.push_str(
-        //                 arg.as_smtlib2()
-        //                     .split("\n")
-        //                     .fold("".to_owned(), |mut acc, line| {
-        //                         acc.push_str(line);
-        //                         acc.push_str("\n    ");
-        //                         acc
-        //                     })
-        //                     .as_str(),
-        //             );
-        //             acc.push_str("\n");
-        //             acc
-        //         },
-        //     );
-        //     smtlib2.push_str(")");
-        // }
+        if smtlib2.len() > 80 {
+            smtlib2 = args.iter().fold(
+                {
+                    let mut res = "(".to_owned();
+                    res.push_str(func_name);
+                    res.push_str("\n");
+                    res
+                },
+                |mut acc, arg| {
+                    acc.push_str(
+                        arg.as_smtlib2()
+                            .split("\n")
+                            .fold("".to_owned(), |mut acc, line| {
+                                acc.push_str("    ");
+                                acc.push_str(line);
+                                acc.push_str("\n");
+                                acc
+                            })
+                            .as_str(),
+                    );
+                    acc
+                },
+            );
+            smtlib2.push_str(")");
+        }
 
         Constraint { smtlib2: smtlib2 }
     }
@@ -234,6 +243,27 @@ macro_rules! constraint {
             smtlib2.push_str($args.as_smtlib2().as_str());
         )*
         smtlib2.push_str(")");
+
+        if smtlib2.len() > 80 {
+            smtlib2 = "(".to_string();
+            smtlib2.push_str($func_name);
+            smtlib2.push_str("\n");
+            $(
+                smtlib2.push_str(
+                    $args.as_smtlib2()
+                        .split("\n")
+                        .fold("".to_owned(), |mut acc, line| {
+                            acc.push_str("    ");
+                            acc.push_str(line);
+                            acc.push_str("\n");
+                            acc
+                        })
+                        .as_str(),
+                );
+            )*
+            smtlib2.push_str(")");
+        }
+
         Constraint { smtlib2: smtlib2 }
     }}
 }
@@ -371,7 +401,7 @@ fn destruct_list(
     let dest_bytes_sym = Symbol::new(expr);
     declarations.push(Declaration::new(
         &dest_value,
-        &Sort::Seq(Box::new(Sort::Refl)),
+        &Sort::List(Box::new(Sort::Refl)),
     ));
     declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
     (
@@ -430,7 +460,7 @@ fn destruct_set(
     let dest_bytes_sym = Symbol::new(expr);
     declarations.push(Declaration::new(
         &dest_value,
-        &Sort::Seq(Box::new(Sort::Refl)),
+        &Sort::List(Box::new(Sort::Refl)),
     ));
     declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
     (
@@ -472,12 +502,68 @@ fn check_function_calling(
     cur_value: &Symbol,
     declarations: &mut Vec<Declaration>,
 ) -> Vec<Constraint> {
-    let mut constraints: Vec<Constraint> = args
-        .iter()
-        .flat_map(|res| res.constraints.clone())
-        .collect();
-    constraints.extend(match func {
-        FunctionKind::Function(_) => todo!(),
+    let args_constraints: Vec<Vec<Constraint>> =
+        args.iter().map(|res| res.constraints.clone()).collect();
+    match func {
+        FunctionKind::Function(fn_name) => match fn_name.as_str() {
+            "keys" => {
+                let [map_val] = args[..] else { panic!() };
+                let (map_inner, map_constraint) =
+                    destruct_map(&map_val.value, cur_expr, declarations);
+                let (cur_inner_value, _, cur_inner_constraint) =
+                    destruct_list(&cur_value, cur_expr, declarations);
+                args_constraints
+                    .into_iter()
+                    .flatten()
+                    .chain([
+                        map_constraint,
+                        cur_inner_constraint,
+                        constraint!("=", cur_inner_value, constraint!("list-keys", map_inner)),
+                    ])
+                    .collect()
+            }
+            "hasOnly" => {
+                let [target_val, keys_val] = args[..] else {
+                    panic!()
+                };
+                let (target_inner_val, _, target_constraint) =
+                    destruct_list(&target_val.value, cur_expr, declarations);
+                let (keys_inner_val, _, keys_constraint) =
+                    destruct_list(&keys_val.value, cur_expr, declarations);
+                let (cur_inner_val, cur_constraint) =
+                    destruct_bool(&cur_value, cur_expr, declarations);
+                args_constraints
+                    .into_iter()
+                    .flatten()
+                    .chain([
+                        target_constraint,
+                        keys_constraint,
+                        cur_constraint,
+                        constraint!(
+                            "=",
+                            cur_inner_val,
+                            constraint!("refl-list-in-refl-list", target_inner_val, keys_inner_val) // constraint!(
+                                                                                                    //     "forall ((elem Refl))",
+                                                                                                    //     constraint!(
+                                                                                                    //         "implies",
+                                                                                                    //         constraint!(
+                                                                                                    //             "refl-list-exists",
+                                                                                                    //             target_inner_val,
+                                                                                                    //             Constraint::mono("elem")
+                                                                                                    //         ),
+                                                                                                    //         constraint!(
+                                                                                                    //             "refl-list-exists",
+                                                                                                    //             keys_inner_val,
+                                                                                                    //             Constraint::mono("elem")
+                                                                                                    //         )
+                                                                                                    //     )
+                                                                                                    // )
+                        ),
+                    ])
+                    .collect()
+            }
+            _ => todo!(),
+        },
         FunctionKind::UnaryOp(_) => todo!(),
         FunctionKind::BinaryOp(binary_op) => match binary_op {
             BinaryLiteral::And => {
@@ -489,18 +575,22 @@ fn check_function_calling(
                 let (right_val, right_constraint) =
                     destruct_bool(&right_res.value, cur_expr, declarations);
 
-                vec![constraint!(
-                    "=",
-                    cur_value,
-                    constraint!(
-                        "bool",
+                args_constraints
+                    .into_iter()
+                    .flatten()
+                    .chain([constraint!(
+                        "=",
+                        cur_value,
                         constraint!(
-                            "and",
-                            constraint!("and", left_val, left_constraint),
-                            constraint!("and", right_val, right_constraint)
+                            "bool",
+                            constraint!(
+                                "and",
+                                constraint!("and", left_val, left_constraint),
+                                constraint!("and", right_val, right_constraint)
+                            )
                         )
-                    )
-                )]
+                    )])
+                    .collect()
             }
             BinaryLiteral::Or => {
                 let [left_res, right_res] = args[..] else {
@@ -518,8 +608,18 @@ fn check_function_calling(
                         "bool",
                         constraint!(
                             "or",
-                            constraint!("and", left_val, left_constraint),
-                            constraint!("and", right_val, right_constraint)
+                            constraint!(
+                                "and",
+                                left_val,
+                                left_constraint,
+                                Constraint::new("and", args_constraints[0].iter().collect())
+                            ),
+                            constraint!(
+                                "and",
+                                right_val,
+                                right_constraint,
+                                Constraint::new("and", args_constraints[1].iter().collect())
+                            )
                         )
                     )
                 )]
@@ -543,50 +643,54 @@ fn check_function_calling(
                 let (right_str_val, right_str_bytes, right_str_constraint) =
                     destruct_string(&right_res.value, cur_expr, declarations);
 
-                vec![constraint!(
-                    "or",
-                    constraint!(
-                        "and",
-                        left_int_constraint,
-                        right_int_constraint,
+                args_constraints
+                    .into_iter()
+                    .flatten()
+                    .chain([constraint!(
+                        "or",
                         constraint!(
-                            "=",
-                            cur_value,
-                            constraint!("int", constraint!("+", left_int_val, right_int_val))
-                        )
-                    ),
-                    constraint!(
-                        "and",
-                        left_float_constraint,
-                        right_float_constraint,
-                        constraint!(
-                            "=",
-                            cur_value,
+                            "and",
+                            left_int_constraint,
+                            right_int_constraint,
                             constraint!(
-                                "float",
+                                "=",
+                                cur_value,
+                                constraint!("int", constraint!("+", left_int_val, right_int_val))
+                            )
+                        ),
+                        constraint!(
+                            "and",
+                            left_float_constraint,
+                            right_float_constraint,
+                            constraint!(
+                                "=",
+                                cur_value,
                                 constraint!(
-                                    "fp.add roundNearestTiesToEven",
-                                    left_float_val,
-                                    right_float_val
+                                    "float",
+                                    constraint!(
+                                        "fp.add roundNearestTiesToEven",
+                                        left_float_val,
+                                        right_float_val
+                                    )
+                                )
+                            )
+                        ),
+                        constraint!(
+                            "and",
+                            left_str_constraint,
+                            right_str_constraint,
+                            constraint!(
+                                "=",
+                                cur_value,
+                                constraint!(
+                                    "str",
+                                    constraint!("str.++", left_str_val, right_str_val),
+                                    constraint!("+", left_str_bytes, right_str_bytes)
                                 )
                             )
                         )
-                    ),
-                    constraint!(
-                        "and",
-                        left_str_constraint,
-                        right_str_constraint,
-                        constraint!(
-                            "=",
-                            cur_value,
-                            constraint!(
-                                "str",
-                                constraint!("str.++", left_str_val, right_str_val),
-                                constraint!("+", left_str_bytes, right_str_bytes)
-                            )
-                        )
-                    )
-                )]
+                    )])
+                    .collect()
             }
             BinaryLiteral::Sub => todo!(),
             BinaryLiteral::Mul => todo!(),
@@ -597,28 +701,41 @@ fn check_function_calling(
             BinaryLiteral::Lt => todo!(),
             BinaryLiteral::Lte => todo!(),
             BinaryLiteral::Eq => {
-                vec![constraint!(
+                let [left_res, right_res] = args[..] else {
+                    panic!()
+                };
+                let mut constraints = vec![constraint!(
                     "=",
                     cur_value,
-                    constraint!("bool", constraint!("=", &args[0].value, &args[1].value))
-                )]
+                    constraint!("bool", constraint!("=", &left_res.value, &right_res.value))
+                )];
+                constraints.extend(left_res.constraints.iter().cloned());
+                constraints.extend(right_res.constraints.iter().cloned());
+                constraints.extend(args_constraints.into_iter().flatten());
+                constraints
             }
             BinaryLiteral::NotEq => {
-                vec![constraint!(
+                let [left_res, right_res] = args[..] else {
+                    panic!()
+                };
+                let mut constraints = vec![constraint!(
                     "=",
                     cur_value,
                     constraint!(
                         "bool",
-                        constraint!("not", constraint!("=", &args[0].value, &args[1].value))
+                        constraint!("not", constraint!("=", &left_res.value, &right_res.value))
                     )
-                )]
+                )];
+                constraints.extend(left_res.constraints.iter().cloned());
+                constraints.extend(right_res.constraints.iter().cloned());
+                constraints.extend(args_constraints.into_iter().flatten());
+                constraints
             }
             BinaryLiteral::In => todo!(),
         },
         FunctionKind::Subscript => todo!(),
         FunctionKind::SubscriptRange => todo!(),
-    });
-    constraints
+    }
 }
 
 fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
@@ -673,23 +790,31 @@ fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                     .map(|elem_lit| check_expression(ctx, elem_lit))
                     .collect();
 
-                vec![constraint!(
-                    "=",
-                    cur_value,
+                vec![
                     constraint!(
-                        "list",
-                        elems_res.iter().fold(
-                            constraint!("as seq.empty", Sort::Seq(Box::new(Sort::Refl))),
-                            |acc, elem| {
-                                constraint!("seq.++", constraint!("seq.unit", elem.value), acc)
-                            },
-                        ),
-                        elems_res.iter().fold(
-                            Constraint::from(Literal::from(0)),
-                            |acc, elem| constraint!("+", constraint!("list-sum", elem.value), acc)
+                        "=",
+                        cur_value,
+                        constraint!(
+                            "list",
+                            elems_res.iter().fold(
+                                constraint!("as nil", Sort::List(Box::new(Sort::Refl))),
+                                |acc, elem| { constraint!("insert", elem.value, acc) },
+                            ),
+                            elems_res.iter().fold(
+                                Constraint::from(Literal::from(0)),
+                                |acc, elem| constraint!(
+                                    "+",
+                                    constraint!("refl-sum", elem.value),
+                                    acc
+                                )
+                            )
                         )
-                    )
-                )]
+                    ),
+                    Constraint::new(
+                        "and",
+                        elems_res.iter().flat_map(|res| &res.constraints).collect(),
+                    ),
+                ]
             }
             crate::ast::Literal::Map(lit) => {
                 let elems_res: Vec<_> = lit
@@ -697,27 +822,41 @@ fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                     .map(|(key, value_expr)| (key, check_expression(ctx, value_expr)))
                     .collect();
 
-                vec![constraint!(
-                    "=",
-                    cur_value,
+                vec![
                     constraint!(
-                        "map",
-                        elems_res
-                            .iter()
-                            .fold(Constraint::mono("nil"), |acc, (key, value)| {
-                                constraint!("cons", constraint!("entry", key, value.value), acc)
-                            }),
-                        elems_res.iter().fold(
-                            Constraint::from(Literal::from(0)),
-                            |acc, (_, value)| constraint!(
-                                "+",
-                                2,
-                                constraint!("list-sum", value.value),
-                                acc
+                        "=",
+                        cur_value,
+                        constraint!(
+                            "map",
+                            elems_res.iter().fold(
+                                constraint!("as nil", Sort::Map),
+                                |acc, (key, value)| {
+                                    constraint!(
+                                        "insert",
+                                        constraint!("entry", key, value.value),
+                                        acc
+                                    )
+                                }
+                            ),
+                            elems_res.iter().fold(
+                                Constraint::from(Literal::from(0)),
+                                |acc, (_, value)| constraint!(
+                                    "+",
+                                    2,
+                                    constraint!("refl-sum", value.value),
+                                    acc
+                                )
                             )
                         )
-                    )
-                )]
+                    ),
+                    Constraint::new(
+                        "and",
+                        elems_res
+                            .iter()
+                            .flat_map(|(_, res)| &res.constraints)
+                            .collect(),
+                    ),
+                ]
             }
             crate::ast::Literal::Path(_) => vec![constraint!("=", cur_value, "path")],
         },
@@ -828,7 +967,7 @@ fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                     let inner_bytes_sym = Symbol::new(target_expr as &Expression);
                     ctx.declarations.borrow_mut().push(Declaration::new(
                         &inner_value,
-                        &Sort::Seq(Box::new(Sort::Refl)),
+                        &Sort::List(Box::new(Sort::Refl)),
                     ));
                     ctx.declarations
                         .borrow_mut()
@@ -879,111 +1018,79 @@ fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
         }
         ExpressionKind::UnaryOperation(op_lit, op_param_expr) => {
             let op_param_res = check_expression(ctx, &op_param_expr);
-            op_param_res
-                .constraints
-                .iter()
-                .chain(
-                    check_function_calling(
-                        cur_expr,
-                        ctx,
-                        &FunctionKind::UnaryOp(*op_lit),
-                        &vec![&op_param_res],
-                        &cur_value,
-                        ctx.declarations.borrow_mut().as_mut(),
-                    )
-                    .iter(),
-                )
-                .cloned()
-                .collect()
+            check_function_calling(
+                cur_expr,
+                ctx,
+                &FunctionKind::UnaryOp(*op_lit),
+                &vec![&op_param_res],
+                &cur_value,
+                ctx.declarations.borrow_mut().as_mut(),
+            )
         }
         ExpressionKind::BinaryOperation(op_lit, op_param1_expr, op_param2_expr) => {
             let op_param1_res = check_expression(ctx, &op_param1_expr);
             let op_param2_res = check_expression(ctx, &op_param2_expr);
-            op_param1_res
-                .constraints
-                .iter()
-                .chain(op_param2_res.constraints.iter())
-                .chain(
-                    check_function_calling(
-                        cur_expr,
-                        ctx,
-                        &FunctionKind::BinaryOp(*op_lit),
-                        &vec![&op_param1_res, &op_param2_res],
-                        &cur_value,
-                        ctx.declarations.borrow_mut().as_mut(),
-                    )
-                    .iter(),
-                )
-                .cloned()
-                .collect()
+            check_function_calling(
+                cur_expr,
+                ctx,
+                &FunctionKind::BinaryOp(*op_lit),
+                &vec![&op_param1_res, &op_param2_res],
+                &cur_value,
+                ctx.declarations.borrow_mut().as_mut(),
+            )
         }
         ExpressionKind::SubscriptExpression(obj_expr, param_expr) => {
             let obj_res = check_expression(ctx, &obj_expr);
             let param_res = check_expression(ctx, &param_expr);
-            obj_res
-                .constraints
-                .iter()
-                .chain(param_res.constraints.iter())
-                .chain(
-                    check_function_calling(
-                        cur_expr,
-                        ctx,
-                        &FunctionKind::Subscript,
-                        &vec![&obj_res, &param_res],
-                        &cur_value,
-                        ctx.declarations.borrow_mut().as_mut(),
-                    )
-                    .iter(),
-                )
-                .cloned()
-                .collect()
+            check_function_calling(
+                cur_expr,
+                ctx,
+                &FunctionKind::Subscript,
+                &vec![&obj_res, &param_res],
+                &cur_value,
+                ctx.declarations.borrow_mut().as_mut(),
+            )
         }
         ExpressionKind::FunctionCallExpression(fn_name, params_expr) => {
             let params_res: Vec<_> = params_expr
                 .iter()
                 .map(|expr| check_expression(ctx, expr))
                 .collect();
-            params_res
-                .iter()
-                .flat_map(|res| res.constraints.iter())
-                .chain(
-                    check_function_calling(
-                        cur_expr,
-                        ctx,
-                        &FunctionKind::Function(fn_name.clone()),
-                        &params_res.iter().map(|x| x).collect(),
-                        &cur_value,
-                        ctx.declarations.borrow_mut().as_mut(),
-                    )
-                    .iter(),
-                )
-                .cloned()
-                .collect()
+            check_function_calling(
+                cur_expr,
+                ctx,
+                &FunctionKind::Function(fn_name.clone()),
+                &params_res.iter().map(|x| x).collect(),
+                &cur_value,
+                ctx.declarations.borrow_mut().as_mut(),
+            )
         }
         ExpressionKind::TernaryOperation(cond_expr, left_expr, right_expr) => {
             let cond_res = check_expression(ctx, &cond_expr);
             let left_res = check_expression(ctx, &left_expr);
             let right_res = check_expression(ctx, &right_expr);
-            cond_res
-                .constraints
-                .iter()
-                .chain(left_res.constraints.iter())
-                .chain(right_res.constraints.iter())
-                .chain(
-                    [constraint!(
-                        "=",
-                        cur_value,
-                        constraint!(
-                            "ite",
-                            constraint!("=", cond_res.value, constraint!("bool", true)),
-                            left_res.value,
-                            right_res.value
-                        )
-                    )]
-                    .iter(),
+            vec![constraint!(
+                "=",
+                cur_value,
+                constraint!(
+                    "ite",
+                    constraint!(
+                        "and",
+                        constraint!("=", cond_res.value, constraint!("bool", true)),
+                        Constraint::new("and", cond_res.constraints.iter().collect())
+                    ),
+                    constraint!(
+                        "and",
+                        left_res.value,
+                        Constraint::new("and", left_res.constraints.iter().collect())
+                    ),
+                    constraint!(
+                        "and",
+                        right_res.value,
+                        Constraint::new("and", right_res.constraints.iter().collect())
+                    )
                 )
-                .cloned()
-                .collect()
+            )]
         }
         ExpressionKind::MemberExpression(obj_expr, member_expr) => match &member_expr.kind {
             ExpressionKind::Variable(variable_name) => {
@@ -1013,6 +1120,23 @@ fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                     )
                     .cloned()
                     .collect()
+            }
+            ExpressionKind::FunctionCallExpression(fn_name, params_expr) => {
+                let obj_res = check_expression(ctx, &obj_expr);
+                let params_res: Vec<_> = params_expr
+                    .iter()
+                    .map(|expr| check_expression(ctx, expr))
+                    .collect();
+                let mut params = vec![&obj_res];
+                params.extend(params_res.iter().map(|x| x));
+                check_function_calling(
+                    cur_expr,
+                    ctx,
+                    &FunctionKind::Function(fn_name.clone()),
+                    &params,
+                    &cur_value,
+                    ctx.declarations.borrow_mut().as_mut(),
+                )
             }
             _ => panic!(),
         },
@@ -1101,10 +1225,10 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
         (duration)
         (latlng)
         (timestamp)
-        (list (list_val (Seq Refl)) (list_bytes Int))
+        (list (list_val (List Refl)) (list_bytes Int))
         (map (map_val (List (Entry String Refl))))
         (mapdiff (mapdiff_left (List (Entry String Refl))) (mapdiff_right (List (Entry String Refl))) (mapdiff_bytes Int))
-        (set (set_val (Seq Refl)) (set_bytes Int))
+        (set (set_val (List Refl)) (set_bytes Int))
         (path)
     )
 ))
@@ -1117,7 +1241,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
     )
     Refl
     (if
-        (= lst nil)
+        (= lst (as nil (List (Entry String Refl))))
         undefined
         (if
             (= (key (head lst)) sk)
@@ -1135,7 +1259,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
     )
     Bool
     (if
-        (= lst nil)
+        (= lst (as nil (List (Entry String Refl))))
         false
         (if
             (= (key (head lst)) sk)
@@ -1146,17 +1270,34 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
 )
 
 (define-fun-rec
-    list-keys
+    map-is-uniq
     (
         (lst (List (Entry String Refl)))
     )
-    (Seq String)
+    Bool
     (if
-        (= lst nil)
-        (as seq.empty (Seq String))
-        (seq.++
-            (seq.unit (key (head lst)))
-            (list-keys (tail lst))
+        (= lst (as nil (List (Entry String Refl))))
+        true
+        (and
+            (not (list-exists (tail lst) (key (head lst))))
+            ;(match (value (head lst)) (
+            ;    (undefined true)
+            ;    (null true)
+            ;    ((bool x) true)
+            ;    ((int x) true)
+            ;    ((float x) true)
+            ;    ((str v b) true)
+            ;    ((bytes v b) true)
+            ;    (duration true)
+            ;    (latlng true)
+            ;    (timestamp true)
+            ;    ((list v b) true)
+            ;    ((map x) (map-is-uniq x))
+            ;    ((mapdiff l r b) true)
+            ;    ((set v b) true)
+            ;    (path true)
+            ;))
+            (map-is-uniq (tail lst))
         )
     )
 )
@@ -1168,7 +1309,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
     )
     Int
     (if
-        (= lst nil)
+        (= lst (as nil (List (Entry String Refl))))
         0
         (if
             (= (value (head lst)) undefined)
@@ -1198,6 +1339,107 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
     )
 )
 
+(define-fun-rec
+    refl-sum
+    (
+        (refl Refl)
+    )
+    Int
+    (match refl (
+        (undefined (* 1024 1024))
+        (null 1)
+        ((bool x) 1)
+        ((int x) 8)
+        ((float x) 8)
+        ((str v b) b)
+        ((bytes v b) b)
+        (duration 8)
+        (latlng 16)
+        (timestamp 8)
+        ((list v b) b)
+        ((map x) (list-sum x))
+        ((mapdiff l r b) (* 1024 1024))
+        ((set v b) (* 1024 1024))
+        (path (* 6 1024))
+    ))
+)
+
+(define-fun-rec
+    list-keys
+    (
+        (lst (List (Entry String Refl)))
+    )
+    (List Refl)
+    (if
+        (= lst (as nil (List (Entry String Refl))))
+        (as nil (List Refl))
+        (insert
+            (str (key (head lst)) (str.len (key (head lst))))
+            (list-keys (tail lst))
+        )
+    )
+)
+
+(define-fun-rec
+    refl-list-exists
+    (
+        (lst (List Refl))
+        (sk Refl)
+    )
+    Bool
+    (if
+        (= lst (as nil (List Refl)))
+        false
+        (if
+            (= (head lst) sk)
+            true
+            (refl-list-exists (tail lst) sk)
+        )
+    )
+)
+
+(define-fun-rec
+    refl-list-in-refl-list
+    (
+        (left (List Refl))
+        (right (List Refl))
+    )
+    Bool
+    (if
+        (= left (as nil (List Refl)))
+        true
+        (and
+            (refl-list-exists right (head left))
+            (refl-list-in-refl-list (tail left) right)
+        )
+    )
+)
+
+(define-fun
+    refl-map-is-uniq
+    (
+        (refl Refl)
+    )
+    Bool
+    (match refl (
+        (undefined true)
+        (null true)
+        ((bool x) true)
+        ((int x) true)
+        ((float x) true)
+        ((str v b) true)
+        ((bytes v b) true)
+        (duration true)
+        (latlng true)
+        (timestamp true)
+        ((list v b) true)
+        ((map x) (map-is-uniq x))
+        ((mapdiff l r b) true)
+        ((set v b) true)
+        (path true)
+    ))
+)
+
 (declare-const request_resource_data Refl)
 (declare-const request_resource_data_inner (List (Entry String Refl)))
 (assert (= request_resource_data (map request_resource_data_inner)))
@@ -1211,6 +1453,8 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
 ;(declare-const request_inner (List (Entry String Refl)))
 ;(assert (= (list-get request_inner "resource") request_resource))
 ;(assert (= request (map request_inner)))
+
+(assert (refl-map-is-uniq request_resource_data))
 "#
             ),
         }]),
