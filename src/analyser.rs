@@ -556,8 +556,28 @@ fn check_function_calling(
                 constraints.push(constraint!("=", cur_value, constraint!("not", target_val)));
                 constraints
             }
-            crate::ast::UnaryLiteral::Plus => todo!(),
-            crate::ast::UnaryLiteral::Minus => todo!(),
+            crate::ast::UnaryLiteral::Minus => {
+                let [target] = args[..] else { panic!() };
+                let (target_int_val, target_int_destruct_constraint) =
+                    destruct_int(&target.value, cur_expr, declarations);
+                let (target_float_val, target_float_destruct_constraint) =
+                    destruct_float(&target.value, cur_expr, declarations);
+
+                constraints.push(constraint!(
+                    "or",
+                    constraint!(
+                        "and",
+                        target_int_destruct_constraint,
+                        constraint!("=", cur_value, constraint!("-", target_int_val))
+                    ),
+                    constraint!(
+                        "and",
+                        target_float_destruct_constraint,
+                        constraint!("=", cur_value, constraint!("-", target_float_val))
+                    )
+                ));
+                constraints
+            }
         },
         FunctionKind::BinaryOp(binary_op) => match binary_op {
             BinaryLiteral::And => {
@@ -569,7 +589,7 @@ fn check_function_calling(
                 let (right_val, right_constraint) =
                     destruct_bool(&right_res.value, cur_expr, declarations);
 
-                constraints.extend([constraint!(
+                constraints.push(constraint!(
                     "=",
                     cur_value,
                     constraint!(
@@ -580,7 +600,7 @@ fn check_function_calling(
                             constraint!("and", right_val, right_constraint)
                         )
                     )
-                )]);
+                ));
                 constraints
             }
             BinaryLiteral::Or => {
@@ -634,7 +654,7 @@ fn check_function_calling(
                 let (right_str_val, right_str_bytes, right_str_constraint) =
                     destruct_string(&right_res.value, cur_expr, declarations);
 
-                constraints.extend([constraint!(
+                constraints.push(constraint!(
                     "or",
                     constraint!(
                         "and",
@@ -677,7 +697,7 @@ fn check_function_calling(
                             )
                         )
                     )
-                )]);
+                ));
                 constraints
             }
             BinaryLiteral::Sub => todo!(),

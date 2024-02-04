@@ -106,7 +106,6 @@ fn parse_expression(node: &Node, context: &Context) -> Expression {
                 match node.child_by_field_name("operator").unwrap().kind() {
                     "!" => UnaryLiteral::Not,
                     "-" => UnaryLiteral::Minus,
-                    "+" => UnaryLiteral::Plus,
                     _ => panic!(),
                 },
                 Box::new(parse_expression(
