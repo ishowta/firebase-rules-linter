@@ -46,12 +46,6 @@ impl Ast for i32 {
     }
 }
 
-impl Ast for f64 {
-    fn as_smtlib2(&self) -> String {
-        format!("{}", self)
-    }
-}
-
 impl Ast for bool {
     fn as_smtlib2(&self) -> String {
         format!("{}", self)
@@ -81,7 +75,6 @@ impl Ast for Symbol {
 enum Sort {
     Bool,
     Int,
-    Float64,
     String,
     List(Box<Sort>),
     Entry(Box<Sort>),
@@ -95,7 +88,6 @@ impl Ast for Sort {
             Sort::Bool => "Bool".to_owned(),
             Sort::Int => "Int".to_owned(),
             Sort::String => "String".to_owned(),
-            Sort::Float64 => "Float64".to_owned(),
             Sort::List(sort) => format!("(List {})", sort.as_smtlib2()),
             Sort::Entry(sort) => format!("(Entry String {})", sort.as_smtlib2()),
             Sort::Refl => "Refl".to_owned(),
@@ -366,19 +358,6 @@ fn destruct_bytes(
     )
 }
 
-fn destruct_float(
-    refl_sym: &Symbol,
-    expr: &dyn Node,
-    declarations: &mut Vec<Declaration>,
-) -> (Symbol, Constraint) {
-    let dest_value = Symbol::new(expr);
-    declarations.push(Declaration::new(&dest_value, &Sort::Float64));
-    (
-        dest_value.clone(),
-        constraint!("=", refl_sym, constraint!("float", dest_value)),
-    )
-}
-
 fn destruct_int(
     refl_sym: &Symbol,
     expr: &dyn Node,
@@ -553,28 +532,30 @@ fn check_function_calling(
                     destruct_bool(&target.value, cur_expr, declarations);
 
                 constraints.push(target_destruct_constraint);
-                constraints.push(constraint!("=", cur_value, constraint!("not", target_val)));
+                constraints.push(constraint!(
+                    "=",
+                    cur_value,
+                    constraint!("bool", constraint!("not", target_val))
+                ));
                 constraints
             }
             crate::ast::UnaryLiteral::Minus => {
                 let [target] = args[..] else { panic!() };
                 let (target_int_val, target_int_destruct_constraint) =
                     destruct_int(&target.value, cur_expr, declarations);
-                let (target_float_val, target_float_destruct_constraint) =
-                    destruct_float(&target.value, cur_expr, declarations);
 
                 constraints.push(constraint!(
                     "or",
                     constraint!(
                         "and",
                         target_int_destruct_constraint,
-                        constraint!("=", cur_value, constraint!("-", target_int_val))
+                        constraint!(
+                            "=",
+                            cur_value,
+                            constraint!("int", constraint!("-", target_int_val))
+                        )
                     ),
-                    constraint!(
-                        "and",
-                        target_float_destruct_constraint,
-                        constraint!("=", cur_value, constraint!("-", target_float_val))
-                    )
+                    constraint!("=", cur_value, Constraint::mono("float"))
                 ));
                 constraints
             }
@@ -642,15 +623,11 @@ fn check_function_calling(
 
                 let (left_int_val, left_int_constraint) =
                     destruct_int(&left_res.value, cur_expr, declarations);
-                let (left_float_val, left_float_constraint) =
-                    destruct_float(&left_res.value, cur_expr, declarations);
                 let (left_str_val, left_str_bytes, left_str_constraint) =
                     destruct_string(&left_res.value, cur_expr, declarations);
 
                 let (right_int_val, right_int_constraint) =
                     destruct_int(&right_res.value, cur_expr, declarations);
-                let (right_float_val, right_float_constraint) =
-                    destruct_float(&right_res.value, cur_expr, declarations);
                 let (right_str_val, right_str_bytes, right_str_constraint) =
                     destruct_string(&right_res.value, cur_expr, declarations);
 
@@ -668,20 +645,9 @@ fn check_function_calling(
                     ),
                     constraint!(
                         "and",
-                        left_float_constraint,
-                        right_float_constraint,
-                        constraint!(
-                            "=",
-                            cur_value,
-                            constraint!(
-                                "float",
-                                constraint!(
-                                    "fp.add roundNearestTiesToEven",
-                                    left_float_val,
-                                    right_float_val
-                                )
-                            )
-                        )
+                        constraint!("=", cur_value, Constraint::mono("float")),
+                        constraint!("=", left_res.value, Constraint::mono("float")),
+                        constraint!("=", right_res.value, Constraint::mono("float"))
                     ),
                     constraint!(
                         "and",
@@ -700,14 +666,318 @@ fn check_function_calling(
                 ));
                 constraints
             }
-            BinaryLiteral::Sub => todo!(),
-            BinaryLiteral::Mul => todo!(),
-            BinaryLiteral::Div => todo!(),
-            BinaryLiteral::Mod => todo!(),
-            BinaryLiteral::Gt => todo!(),
-            BinaryLiteral::Gte => todo!(),
-            BinaryLiteral::Lt => todo!(),
-            BinaryLiteral::Lte => todo!(),
+            BinaryLiteral::Sub => {
+                let [left_res, right_res] = args[..] else {
+                    panic!()
+                };
+
+                let (left_int_val, left_int_constraint) =
+                    destruct_int(&left_res.value, cur_expr, declarations);
+
+                let (right_int_val, right_int_constraint) =
+                    destruct_int(&right_res.value, cur_expr, declarations);
+
+                constraints.push(constraint!(
+                    "or",
+                    constraint!(
+                        "and",
+                        left_int_constraint,
+                        right_int_constraint,
+                        constraint!(
+                            "=",
+                            cur_value,
+                            constraint!("int", constraint!("-", left_int_val, right_int_val))
+                        )
+                    ),
+                    constraint!(
+                        "and",
+                        constraint!("=", cur_value, Constraint::mono("float")),
+                        constraint!("=", left_res.value, Constraint::mono("float")),
+                        constraint!("=", right_res.value, Constraint::mono("float"))
+                    )
+                ));
+                constraints
+            }
+            BinaryLiteral::Mul => {
+                let [left_res, right_res] = args[..] else {
+                    panic!()
+                };
+
+                let (left_int_val, left_int_constraint) =
+                    destruct_int(&left_res.value, cur_expr, declarations);
+
+                let (right_int_val, right_int_constraint) =
+                    destruct_int(&right_res.value, cur_expr, declarations);
+
+                constraints.push(constraint!(
+                    "or",
+                    constraint!(
+                        "and",
+                        left_int_constraint,
+                        right_int_constraint,
+                        constraint!(
+                            "=",
+                            cur_value,
+                            constraint!("int", constraint!("*", left_int_val, right_int_val))
+                        )
+                    ),
+                    constraint!(
+                        "and",
+                        constraint!("=", cur_value, Constraint::mono("float")),
+                        constraint!("=", left_res.value, Constraint::mono("float")),
+                        constraint!("=", right_res.value, Constraint::mono("float"))
+                    )
+                ));
+                constraints
+            }
+            BinaryLiteral::Div => {
+                let [left_res, right_res] = args[..] else {
+                    panic!()
+                };
+
+                let (left_int_val, left_int_constraint) =
+                    destruct_int(&left_res.value, cur_expr, declarations);
+
+                let (right_int_val, right_int_constraint) =
+                    destruct_int(&right_res.value, cur_expr, declarations);
+
+                constraints.push(constraint!(
+                    "or",
+                    constraint!(
+                        "and",
+                        left_int_constraint,
+                        right_int_constraint,
+                        constraint!(
+                            "=",
+                            cur_value,
+                            constraint!("int", constraint!("div", left_int_val, right_int_val))
+                        )
+                    ),
+                    constraint!(
+                        "and",
+                        constraint!("=", cur_value, Constraint::mono("float")),
+                        constraint!("=", left_res.value, Constraint::mono("float")),
+                        constraint!("=", right_res.value, Constraint::mono("float"))
+                    )
+                ));
+                constraints
+            }
+            BinaryLiteral::Mod => {
+                let [left_res, right_res] = args[..] else {
+                    panic!()
+                };
+
+                let (left_int_val, left_int_constraint) =
+                    destruct_int(&left_res.value, cur_expr, declarations);
+
+                let (right_int_val, right_int_constraint) =
+                    destruct_int(&right_res.value, cur_expr, declarations);
+
+                constraints.push(constraint!(
+                    "or",
+                    constraint!(
+                        "and",
+                        left_int_constraint,
+                        right_int_constraint,
+                        constraint!(
+                            "=",
+                            cur_value,
+                            constraint!("int", constraint!("mod", left_int_val, right_int_val))
+                        )
+                    ),
+                    constraint!(
+                        "and",
+                        constraint!("=", cur_value, Constraint::mono("float")),
+                        constraint!("=", left_res.value, Constraint::mono("float")),
+                        constraint!("=", right_res.value, Constraint::mono("float"))
+                    )
+                ));
+                constraints
+            }
+            BinaryLiteral::Gt => {
+                let [left_res, right_res] = args[..] else {
+                    panic!()
+                };
+
+                let (left_int_val, left_int_constraint) =
+                    destruct_int(&left_res.value, cur_expr, declarations);
+                let (left_str_val, _, left_str_constraint) =
+                    destruct_string(&left_res.value, cur_expr, declarations);
+
+                let (right_int_val, right_int_constraint) =
+                    destruct_int(&right_res.value, cur_expr, declarations);
+                let (right_str_val, _, right_str_constraint) =
+                    destruct_string(&right_res.value, cur_expr, declarations);
+
+                constraints.push(constraint!(
+                    "or",
+                    constraint!(
+                        "and",
+                        left_int_constraint,
+                        right_int_constraint,
+                        constraint!(
+                            "=",
+                            cur_value,
+                            constraint!("bool", constraint!(">", left_int_val, right_int_val))
+                        )
+                    ),
+                    constraint!(
+                        "and",
+                        constraint!("=", cur_value, Constraint::mono("float")),
+                        constraint!("=", left_res.value, Constraint::mono("float")),
+                        constraint!("=", right_res.value, Constraint::mono("float"))
+                    ),
+                    constraint!(
+                        "and",
+                        left_str_constraint,
+                        right_str_constraint,
+                        constraint!(
+                            "=",
+                            cur_value,
+                            constraint!("bool", constraint!("str.<", right_str_val, left_str_val))
+                        )
+                    )
+                ));
+                constraints
+            }
+            BinaryLiteral::Gte => {
+                let [left_res, right_res] = args[..] else {
+                    panic!()
+                };
+
+                let (left_int_val, left_int_constraint) =
+                    destruct_int(&left_res.value, cur_expr, declarations);
+                let (left_str_val, _, left_str_constraint) =
+                    destruct_string(&left_res.value, cur_expr, declarations);
+
+                let (right_int_val, right_int_constraint) =
+                    destruct_int(&right_res.value, cur_expr, declarations);
+                let (right_str_val, _, right_str_constraint) =
+                    destruct_string(&right_res.value, cur_expr, declarations);
+
+                constraints.push(constraint!(
+                    "or",
+                    constraint!(
+                        "and",
+                        left_int_constraint,
+                        right_int_constraint,
+                        constraint!(
+                            "=",
+                            cur_value,
+                            constraint!("bool", constraint!(">=", left_int_val, right_int_val))
+                        )
+                    ),
+                    constraint!(
+                        "and",
+                        constraint!("=", cur_value, Constraint::mono("float")),
+                        constraint!("=", left_res.value, Constraint::mono("float")),
+                        constraint!("=", right_res.value, Constraint::mono("float"))
+                    ),
+                    constraint!(
+                        "and",
+                        left_str_constraint,
+                        right_str_constraint,
+                        constraint!(
+                            "=",
+                            cur_value,
+                            constraint!("bool", constraint!("str.<=", right_str_val, left_str_val))
+                        )
+                    )
+                ));
+                constraints
+            }
+            BinaryLiteral::Lt => {
+                let [left_res, right_res] = args[..] else {
+                    panic!()
+                };
+
+                let (left_int_val, left_int_constraint) =
+                    destruct_int(&left_res.value, cur_expr, declarations);
+                let (left_str_val, _, left_str_constraint) =
+                    destruct_string(&left_res.value, cur_expr, declarations);
+
+                let (right_int_val, right_int_constraint) =
+                    destruct_int(&right_res.value, cur_expr, declarations);
+                let (right_str_val, _, right_str_constraint) =
+                    destruct_string(&right_res.value, cur_expr, declarations);
+
+                constraints.push(constraint!(
+                    "or",
+                    constraint!(
+                        "and",
+                        left_int_constraint,
+                        right_int_constraint,
+                        constraint!(
+                            "=",
+                            cur_value,
+                            constraint!("bool", constraint!("<", left_int_val, right_int_val))
+                        )
+                    ),
+                    constraint!(
+                        "and",
+                        constraint!("=", cur_value, Constraint::mono("float")),
+                        constraint!("=", left_res.value, Constraint::mono("float")),
+                        constraint!("=", right_res.value, Constraint::mono("float"))
+                    ),
+                    constraint!(
+                        "and",
+                        left_str_constraint,
+                        right_str_constraint,
+                        constraint!(
+                            "=",
+                            cur_value,
+                            constraint!("bool", constraint!("str.<", left_str_val, right_str_val))
+                        )
+                    )
+                ));
+                constraints
+            }
+            BinaryLiteral::Lte => {
+                let [left_res, right_res] = args[..] else {
+                    panic!()
+                };
+
+                let (left_int_val, left_int_constraint) =
+                    destruct_int(&left_res.value, cur_expr, declarations);
+                let (left_str_val, _, left_str_constraint) =
+                    destruct_string(&left_res.value, cur_expr, declarations);
+
+                let (right_int_val, right_int_constraint) =
+                    destruct_int(&right_res.value, cur_expr, declarations);
+                let (right_str_val, _, right_str_constraint) =
+                    destruct_string(&right_res.value, cur_expr, declarations);
+
+                constraints.push(constraint!(
+                    "or",
+                    constraint!(
+                        "and",
+                        left_int_constraint,
+                        right_int_constraint,
+                        constraint!(
+                            "=",
+                            cur_value,
+                            constraint!("bool", constraint!("<=", left_int_val, right_int_val))
+                        )
+                    ),
+                    constraint!(
+                        "and",
+                        constraint!("=", cur_value, Constraint::mono("float")),
+                        constraint!("=", left_res.value, Constraint::mono("float")),
+                        constraint!("=", right_res.value, Constraint::mono("float"))
+                    ),
+                    constraint!(
+                        "and",
+                        left_str_constraint,
+                        right_str_constraint,
+                        constraint!(
+                            "=",
+                            cur_value,
+                            constraint!("bool", constraint!("str.<=", left_str_val, right_str_val))
+                        )
+                    )
+                ));
+                constraints
+            }
             BinaryLiteral::Eq => {
                 let [left_res, right_res] = args[..] else {
                     panic!()
@@ -733,7 +1003,64 @@ fn check_function_calling(
                 ));
                 constraints
             }
-            BinaryLiteral::In => todo!(),
+            BinaryLiteral::In => {
+                let [obj_res, key_res] = args[..] else {
+                    panic!()
+                };
+
+                let (obj_map_val, obj_map_constraint) =
+                    destruct_map(&obj_res.value, cur_expr, declarations);
+                let (key_str_val, _, key_str_constraint) =
+                    destruct_string(&key_res.value, cur_expr, declarations);
+
+                let (obj_list_val, _, obj_list_constraint) =
+                    destruct_list(&obj_res.value, cur_expr, declarations);
+
+                let (obj_set_val, _, obj_set_constraint) =
+                    destruct_set(&obj_res.value, cur_expr, declarations);
+
+                constraints.push(constraint!(
+                    "or",
+                    constraint!(
+                        "and",
+                        obj_map_constraint,
+                        key_str_constraint,
+                        constraint!(
+                            "=",
+                            cur_value,
+                            constraint!(
+                                "bool",
+                                constraint!("list-exists", obj_map_val, key_str_val)
+                            )
+                        )
+                    ),
+                    constraint!(
+                        "and",
+                        obj_list_constraint,
+                        constraint!(
+                            "=",
+                            cur_value,
+                            constraint!(
+                                "bool",
+                                constraint!("refl-list-exists", obj_list_val, key_res.value)
+                            )
+                        )
+                    ),
+                    constraint!(
+                        "and",
+                        obj_set_constraint,
+                        constraint!(
+                            "=",
+                            cur_value,
+                            constraint!(
+                                "bool",
+                                constraint!("refl-list-exists", obj_set_val, key_res.value)
+                            )
+                        )
+                    )
+                ));
+                constraints
+            }
         },
         FunctionKind::Subscript => todo!(),
         FunctionKind::SubscriptRange => todo!(),
@@ -757,29 +1084,8 @@ fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
             crate::ast::Literal::Int(lit) => {
                 vec![constraint!("=", cur_value, constraint!("int", lit))]
             }
-            crate::ast::Literal::Float(lit) => {
-                let lit_as_bits: String = lit
-                    .to_be_bytes()
-                    .iter()
-                    .map(|b| format!("{:08b}", b))
-                    .collect::<Vec<String>>()
-                    .join("");
-                vec![constraint!(
-                    "=",
-                    cur_value,
-                    constraint!(
-                        "float",
-                        Constraint::mono(
-                            format!(
-                                "(fp #b{} #b{} #b{})",
-                                lit_as_bits[0..1].to_owned(),
-                                lit_as_bits[1..12].to_owned(),
-                                lit_as_bits[12..].to_owned()
-                            )
-                            .as_str()
-                        )
-                    )
-                )]
+            crate::ast::Literal::Float(_) => {
+                vec![constraint!("=", cur_value, Constraint::mono("float"))]
             }
             crate::ast::Literal::String(lit) => vec![constraint!(
                 "=",
@@ -924,29 +1230,21 @@ fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                     )]
                 }
                 "float" => {
-                    let inner_sym = Symbol::new(target_expr as &Expression);
-                    ctx.declarations
-                        .borrow_mut()
-                        .push(Declaration::new(&inner_sym, &Sort::Float64));
                     vec![constraint!(
                         "=",
                         target_res.value,
-                        constraint!("float", inner_sym)
+                        Constraint::mono("float")
                     )]
                 }
                 "number" => {
                     let inner_int_sym = Symbol::new(target_expr as &Expression);
-                    let inner_float_sym = Symbol::new(target_expr as &Expression);
                     ctx.declarations
                         .borrow_mut()
                         .push(Declaration::new(&inner_int_sym, &Sort::Int));
-                    ctx.declarations
-                        .borrow_mut()
-                        .push(Declaration::new(&inner_float_sym, &Sort::Float64));
                     vec![constraint!(
                         "or",
                         constraint!("=", target_res.value, constraint!("int", inner_int_sym)),
-                        constraint!("=", target_res.value, constraint!("float", inner_float_sym))
+                        constraint!("=", target_res.value, Constraint::mono("float"))
                     )]
                 }
                 "string" => {
@@ -1221,7 +1519,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
         (null)
         (bool (bool_val Bool))
         (int (int_val Int))
-        (float (float_val Float64))
+        (float)
         (str (str_val String) (str_bytes Int))
         (bytes (bytes_val String) (bytes_bytes Int))
         (duration)
@@ -1287,7 +1585,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
             ;    (null true)
             ;    ((bool x) true)
             ;    ((int x) true)
-            ;    ((float x) true)
+            ;    (float true)
             ;    ((str v b) true)
             ;    ((bytes v b) true)
             ;    (duration true)
@@ -1324,7 +1622,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
                     (null 1)
                     ((bool x) 1)
                     ((int x) 8)
-                    ((float x) 8)
+                    (float 8)
                     ((str v b) b)
                     ((bytes v b) b)
                     (duration 8)
@@ -1353,7 +1651,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
         (null 1)
         ((bool x) 1)
         ((int x) 8)
-        ((float x) 8)
+        (float 8)
         ((str v b) b)
         ((bytes v b) b)
         (duration 8)
@@ -1382,7 +1680,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
                 (null true)
                 ((bool x) true)
                 ((int x) true)
-                ((float x) true)
+                (float true)
                 ((str v b) true)
                 ((bytes v b) false)
                 (duration false)
@@ -1410,7 +1708,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
         (null true)
         ((bool x) true)
         ((int x) true)
-        ((float x) true)
+        (float true)
         ((str v b) true)
         ((bytes v b) false)
         (duration false)
@@ -1486,7 +1784,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
         (null true)
         ((bool x) true)
         ((int x) true)
-        ((float x) true)
+        (float true)
         ((str v b) true)
         ((bytes v b) true)
         (duration true)
