@@ -489,53 +489,351 @@ fn check_function_calling(
     match func {
         FunctionKind::Function(fn_name) => match fn_name.as_str() {
             // bytes, list, map, set, string
-            "size" => todo!(),
+            "size" => {
+                let [obj_val] = args[..] else { panic!() };
+
+                let (obj_bytes_val, obj_bytes_bytes, obj_bytes_constraint) =
+                    destruct_bytes(&obj_val.value, cur_expr, declarations);
+                let (obj_list_val, obj_list_bytes, obj_list_constraint) =
+                    destruct_list(&obj_val.value, cur_expr, declarations);
+                let (obj_map_val, obj_map_constraint) =
+                    destruct_map(&obj_val.value, cur_expr, declarations);
+                let (obj_set_val, obj_set_bytes, obj_set_constraint) =
+                    destruct_set(&obj_val.value, cur_expr, declarations);
+                let (obj_string_val, obj_string_bytes, obj_string_constraint) =
+                    destruct_string(&obj_val.value, cur_expr, declarations);
+
+                let (_, cur_inner_bytes, cur_constraint) =
+                    destruct_string(&cur_value, cur_expr, declarations);
+
+                constraints.push(cur_constraint);
+                constraints.push(constraint!(
+                    "or",
+                    constraint!(
+                        "and",
+                        obj_bytes_constraint,
+                        constraint!("<=", cur_inner_bytes, obj_bytes_bytes)
+                    ),
+                    constraint!(
+                        "and",
+                        obj_list_constraint,
+                        constraint!(
+                            "<=",
+                            cur_inner_bytes,
+                            constraint!("refl-list-len", obj_list_val)
+                        )
+                    ),
+                    constraint!(
+                        "and",
+                        obj_map_constraint,
+                        constraint!("<=", cur_inner_bytes, constraint!("list-len", obj_map_val))
+                    ),
+                    constraint!(
+                        "and",
+                        obj_set_constraint,
+                        constraint!(
+                            "<=",
+                            cur_inner_bytes,
+                            constraint!("refl-list-len", obj_set_val)
+                        )
+                    ),
+                    constraint!(
+                        "and",
+                        obj_string_constraint,
+                        constraint!("<=", cur_inner_bytes, obj_string_bytes)
+                    )
+                ));
+                constraints
+            }
             // bytes
-            "toBase64" => todo!(),
-            "toHexString" => todo!(),
-            // list, set
-            "hasOnly" => {
-                // TODO
-                let [target_val, keys_val] = args[..] else {
-                    panic!()
-                };
-                let (target_inner_val, _, target_constraint) =
-                    destruct_list(&target_val.value, cur_expr, declarations);
-                let (keys_inner_val, _, keys_constraint) =
-                    destruct_list(&keys_val.value, cur_expr, declarations);
-                let (cur_inner_val, cur_constraint) =
-                    destruct_bool(&cur_value, cur_expr, declarations);
+            "toHexString" => {
+                let [obj_val] = args[..] else { panic!() };
+                let (_, obj_inner_bytes, obj_constraint) =
+                    destruct_bytes(&obj_val.value, cur_expr, declarations);
+                let (_, cur_inner_bytes, cur_constraint) =
+                    destruct_string(&cur_value, cur_expr, declarations);
                 constraints.extend([
-                    target_constraint,
-                    keys_constraint,
+                    obj_constraint,
+                    cur_constraint,
+                    constraint!("=", cur_inner_bytes, constraint!("*", obj_inner_bytes, 2)),
+                ]);
+                constraints
+            }
+            "toBase64" => {
+                let [obj_val] = args[..] else { panic!() };
+                let (_, obj_inner_bytes, obj_constraint) =
+                    destruct_bytes(&obj_val.value, cur_expr, declarations);
+                let (_, cur_inner_bytes, cur_constraint) =
+                    destruct_string(&cur_value, cur_expr, declarations);
+                constraints.extend([
+                    obj_constraint,
                     cur_constraint,
                     constraint!(
                         "=",
-                        cur_inner_val,
-                        constraint!("refl-list-in-refl-list", target_inner_val, keys_inner_val)
+                        cur_inner_bytes,
+                        constraint!(
+                            "*",
+                            4,
+                            constraint!("div", constraint!("+", obj_inner_bytes, 3), 3)
+                        )
                     ),
                 ]);
                 constraints
             }
-            "hasAll" => todo!(),
-            "hasAny" => todo!(),
+            // list, set
+            "hasOnly" => {
+                let [target_val, keys_val] = args[..] else {
+                    panic!()
+                };
+                let (target_list_val, _, target_list_constraint) =
+                    destruct_list(&target_val.value, cur_expr, declarations);
+                let (target_set_val, _, target_set_constraint) =
+                    destruct_set(&target_val.value, cur_expr, declarations);
+                let (keys_list_val, _, keys_constraint) =
+                    destruct_list(&keys_val.value, cur_expr, declarations);
+                let (cur_inner_val, cur_constraint) =
+                    destruct_bool(&cur_value, cur_expr, declarations);
+                constraints.push(constraint!(
+                    "or",
+                    constraint!(
+                        "and",
+                        target_list_constraint,
+                        keys_constraint,
+                        cur_constraint,
+                        constraint!(
+                            "=",
+                            cur_inner_val,
+                            constraint!("refl-list-in-refl-list", target_list_val, keys_list_val)
+                        )
+                    ),
+                    constraint!(
+                        "and",
+                        target_set_constraint,
+                        keys_constraint,
+                        cur_constraint,
+                        constraint!(
+                            "=",
+                            cur_inner_val,
+                            constraint!("refl-list-in-refl-list", target_set_val, keys_list_val)
+                        )
+                    )
+                ));
+                constraints
+            }
+            "hasAll" => {
+                let [target_val, keys_val] = args[..] else {
+                    panic!()
+                };
+                let (target_list_val, _, target_list_constraint) =
+                    destruct_list(&target_val.value, cur_expr, declarations);
+                let (target_set_val, _, target_set_constraint) =
+                    destruct_set(&target_val.value, cur_expr, declarations);
+                let (keys_list_val, _, keys_constraint) =
+                    destruct_list(&keys_val.value, cur_expr, declarations);
+                let (cur_inner_val, cur_constraint) =
+                    destruct_bool(&cur_value, cur_expr, declarations);
+                constraints.push(constraint!(
+                    "or",
+                    constraint!(
+                        "and",
+                        target_list_constraint,
+                        keys_constraint,
+                        cur_constraint,
+                        constraint!(
+                            "=",
+                            cur_inner_val,
+                            constraint!("refl-list-in-refl-list", keys_list_val, target_list_val)
+                        )
+                    ),
+                    constraint!(
+                        "and",
+                        target_set_constraint,
+                        keys_constraint,
+                        cur_constraint,
+                        constraint!(
+                            "=",
+                            cur_inner_val,
+                            constraint!("refl-list-in-refl-list", keys_list_val, target_set_val)
+                        )
+                    )
+                ));
+                constraints
+            }
+            "hasAny" => {
+                let [target_val, keys_val] = args[..] else {
+                    panic!()
+                };
+                let (target_list_val, _, target_list_constraint) =
+                    destruct_list(&target_val.value, cur_expr, declarations);
+                let (target_set_val, _, target_set_constraint) =
+                    destruct_set(&target_val.value, cur_expr, declarations);
+                let (keys_list_val, _, keys_constraint) =
+                    destruct_list(&keys_val.value, cur_expr, declarations);
+                let (cur_inner_val, cur_constraint) =
+                    destruct_bool(&cur_value, cur_expr, declarations);
+                constraints.push(constraint!(
+                    "or",
+                    constraint!(
+                        "and",
+                        target_list_constraint,
+                        keys_constraint,
+                        cur_constraint,
+                        constraint!(
+                            "=",
+                            cur_inner_val,
+                            constraint!(
+                                "refl-list-is-not-exclusive",
+                                keys_list_val,
+                                target_list_val
+                            )
+                        )
+                    ),
+                    constraint!(
+                        "and",
+                        target_set_constraint,
+                        keys_constraint,
+                        cur_constraint,
+                        constraint!(
+                            "=",
+                            cur_inner_val,
+                            constraint!(
+                                "refl-list-is-not-exclusive",
+                                keys_list_val,
+                                target_set_val
+                            )
+                        )
+                    )
+                ));
+                constraints
+            }
             // list
-            "concat" => todo!(),
-            "join" => todo!(),
-            "removeAll" => todo!(),
-            "toSet" => todo!(),
+            "concat" => {
+                let [obj1_val, obj2_val] = args[..] else {
+                    panic!()
+                };
+                let (_, obj1_inner_bytes, obj1_constraint) =
+                    destruct_list(&obj1_val.value, cur_expr, declarations);
+                let (_, obj2_inner_bytes, obj2_constraint) =
+                    destruct_list(&obj2_val.value, cur_expr, declarations);
+                let (_, cur_inner_bytes, cur_constraint) =
+                    destruct_string(&cur_value, cur_expr, declarations);
+                constraints.extend([
+                    obj1_constraint,
+                    obj2_constraint,
+                    cur_constraint,
+                    constraint!(
+                        "=",
+                        cur_inner_bytes,
+                        constraint!("+", obj1_inner_bytes, obj2_inner_bytes)
+                    ),
+                ]);
+                constraints
+            }
+            "join" => {
+                let [obj_val] = args[..] else { panic!() };
+                let (_, obj_inner_bytes, obj_constraint) =
+                    destruct_list(&obj_val.value, cur_expr, declarations);
+                let (_, cur_inner_bytes, cur_constraint) =
+                    destruct_string(&cur_value, cur_expr, declarations);
+                constraints.extend([
+                    obj_constraint,
+                    cur_constraint,
+                    constraint!("<=", cur_inner_bytes, obj_inner_bytes),
+                ]);
+                constraints
+            }
+            "removeAll" => {
+                let [obj1_val, obj2_val] = args[..] else {
+                    panic!()
+                };
+                let (_, obj1_inner_bytes, obj1_constraint) =
+                    destruct_list(&obj1_val.value, cur_expr, declarations);
+                let (_, _, obj2_constraint) =
+                    destruct_list(&obj2_val.value, cur_expr, declarations);
+                let (_, cur_inner_bytes, cur_constraint) =
+                    destruct_string(&cur_value, cur_expr, declarations);
+                constraints.extend([
+                    obj1_constraint,
+                    obj2_constraint,
+                    cur_constraint,
+                    constraint!("<=", cur_inner_bytes, obj1_inner_bytes),
+                ]);
+                constraints
+            }
+            "toSet" => {
+                let [obj1_val] = args[..] else { panic!() };
+                let (obj1_inner_val, obj1_inner_bytes, obj1_constraint) =
+                    destruct_list(&obj1_val.value, cur_expr, declarations);
+                let (cur_inner_val, cur_inner_bytes, cur_constraint) =
+                    destruct_string(&cur_value, cur_expr, declarations);
+                constraints.extend([
+                    obj1_constraint,
+                    cur_constraint,
+                    constraint!("<=", cur_inner_bytes, obj1_inner_bytes),
+                    constraint!("refl-list-in-refl-list", cur_inner_val, obj1_inner_val),
+                ]);
+                constraints
+            }
             // set
             "difference" => todo!(),
             "intersection" => todo!(),
             "union" => todo!(),
             // string
-            "lower" => todo!(),
+            "lower" => {
+                let [obj_val] = args[..] else { panic!() };
+                let (_, obj_inner_bytes, obj_constraint) =
+                    destruct_string(&obj_val.value, cur_expr, declarations);
+                let (_, cur_inner_bytes, cur_constraint) =
+                    destruct_string(&cur_value, cur_expr, declarations);
+                constraints.extend([
+                    obj_constraint,
+                    cur_constraint,
+                    constraint!("=", cur_inner_bytes, obj_inner_bytes),
+                ]);
+                constraints
+            }
             "matches" => todo!(),
             "replace" => todo!(),
             "split" => todo!(),
-            "toUtf8" => todo!(),
-            "trim" => todo!(),
-            "upper" => todo!(),
+            "toUtf8" => {
+                let [obj_val] = args[..] else { panic!() };
+                let (_, obj_inner_bytes, obj_constraint) =
+                    destruct_string(&obj_val.value, cur_expr, declarations);
+                let (_, cur_inner_bytes, cur_constraint) =
+                    destruct_string(&cur_value, cur_expr, declarations);
+                constraints.extend([
+                    obj_constraint,
+                    cur_constraint,
+                    constraint!("=", cur_inner_bytes, obj_inner_bytes),
+                ]);
+                constraints
+            }
+            "trim" => {
+                let [obj_val] = args[..] else { panic!() };
+                let (_, obj_inner_bytes, obj_constraint) =
+                    destruct_string(&obj_val.value, cur_expr, declarations);
+                let (_, cur_inner_bytes, cur_constraint) =
+                    destruct_string(&cur_value, cur_expr, declarations);
+                constraints.extend([
+                    obj_constraint,
+                    cur_constraint,
+                    constraint!("<=", cur_inner_bytes, obj_inner_bytes),
+                ]);
+                constraints
+            }
+            "upper" => {
+                let [obj_val] = args[..] else { panic!() };
+                let (_, obj_inner_bytes, obj_constraint) =
+                    destruct_string(&obj_val.value, cur_expr, declarations);
+                let (_, cur_inner_bytes, cur_constraint) =
+                    destruct_string(&cur_value, cur_expr, declarations);
+                constraints.extend([
+                    obj_constraint,
+                    cur_constraint,
+                    constraint!("=", cur_inner_bytes, obj_inner_bytes),
+                ]);
+                constraints
+            }
             // map
             "keys" => {
                 let [map_val] = args[..] else { panic!() };
@@ -550,29 +848,88 @@ fn check_function_calling(
                 ]);
                 constraints
             }
-            "diff" => todo!(),
-            "get" => todo!(),
-            "values" => todo!(),
+            "diff" => {
+                let [left_map_res, right_map_res] = args[..] else {
+                    panic!()
+                };
+                let (left_map_val, left_map_constraint) =
+                    destruct_map(&left_map_res.value, cur_expr, declarations);
+                let (right_map_val, right_map_constraint) =
+                    destruct_map(&right_map_res.value, cur_expr, declarations);
+                constraints.extend([
+                    left_map_constraint,
+                    right_map_constraint,
+                    constraint!(
+                        "=",
+                        cur_value,
+                        constraint!("mapdiff", left_map_val, right_map_val)
+                    ),
+                ]);
+                constraints
+            }
+            "get" => {
+                let [obj_res, key_res] = args[..] else {
+                    panic!()
+                };
+
+                let (key_str_val, _, key_str_constraint) =
+                    destruct_string(&obj_res.value, cur_expr, declarations);
+                let (obj_map_val, obj_map_constraint) =
+                    destruct_map(&obj_res.value, cur_expr, declarations);
+
+                constraints.extend([
+                    key_str_constraint,
+                    obj_map_constraint,
+                    constraint!(
+                        "=",
+                        cur_value,
+                        constraint!("list-get", obj_map_val, key_str_val)
+                    ),
+                ]);
+                constraints
+            }
+            "values" => {
+                let [map_val] = args[..] else { panic!() };
+                let (map_inner, map_constraint) =
+                    destruct_map(&map_val.value, cur_expr, declarations);
+                let (cur_inner_value, _, cur_inner_constraint) =
+                    destruct_list(&cur_value, cur_expr, declarations);
+                constraints.extend([
+                    map_constraint,
+                    cur_inner_constraint,
+                    constraint!("=", cur_inner_value, constraint!("list-values", map_inner)),
+                ]);
+                constraints
+            }
             // timestamp
-            "date" => {
+            "date" | "time" => {
                 constraints.push(constraint!("=", cur_value, Constraint::mono("timestamp")));
                 constraints
             }
-            "day" => todo!(),
-            "dayOfWeek" => todo!(),
-            "dayOfYear" => todo!(),
-            "hours" => todo!(),
-            "minutes" => todo!(),
-            "month" => todo!(),
-            "time" => {
-                constraints.push(constraint!("=", cur_value, Constraint::mono("duration")));
+            "day" | "dayOfWeek" | "dayOfYear" | "hours" | "minutes" | "month" | "year"
+            | "toMillis" => {
+                let [obj_val] = args[..] else { panic!() };
+                let (_, cur_constraint) = destruct_int(&cur_value, cur_expr, declarations);
+                constraints.extend([
+                    constraint!("=", &obj_val.value, Constraint::mono("timestamp")),
+                    cur_constraint,
+                ]);
                 constraints
             }
-            "toMillis" => todo!(),
-            "year" => todo!(),
             // timestamp, duration
-            "nanos" => todo!(),
-            "seconds" => todo!(),
+            "nanos" | "seconds" => {
+                let [obj_val] = args[..] else { panic!() };
+                let (_, cur_constraint) = destruct_int(&cur_value, cur_expr, declarations);
+                constraints.extend([
+                    constraint!(
+                        "or",
+                        constraint!("=", &obj_val.value, Constraint::mono("timestamp")),
+                        constraint!("=", &obj_val.value, Constraint::mono("duration"))
+                    ),
+                    cur_constraint,
+                ]);
+                constraints
+            }
             // mapdiff
             "addedKeys" => todo!(),
             "affectedKeys" => todo!(),
@@ -585,9 +942,14 @@ fn check_function_calling(
                 constraints
             }
             // latlng
-            "distance" => todo!(),
-            "latitude" => todo!(),
-            "longitude" => todo!(),
+            "distance" | "latitude" | "longitude" => {
+                let [obj_val] = args[..] else { panic!() };
+                constraints.extend([
+                    constraint!("=", cur_value, Constraint::mono("float")),
+                    constraint!("=", &obj_val.value, Constraint::mono("latlng")),
+                ]);
+                constraints
+            }
             _ => panic!(),
         },
         FunctionKind::UnaryOp(unary_op) => match unary_op {
@@ -1107,7 +1469,7 @@ fn check_function_calling(
                             cur_value,
                             constraint!(
                                 "bool",
-                                constraint!("refl-list-exists", obj_list_val, key_res.value)
+                                constraint!("refl-list-exists", obj_list_val, &key_res.value)
                             )
                         )
                     ),
@@ -1119,7 +1481,7 @@ fn check_function_calling(
                             cur_value,
                             constraint!(
                                 "bool",
-                                constraint!("refl-list-exists", obj_set_val, key_res.value)
+                                constraint!("refl-list-exists", obj_set_val, &key_res.value)
                             )
                         )
                     )
@@ -1746,6 +2108,38 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
 )
 
 (define-fun-rec
+    list-len
+    (
+        (lst (List (Entry String Refl)))
+    )
+    Int
+    (if
+        (= lst (as nil (List (Entry String Refl))))
+        0
+        (+
+            1
+            (list-len (tail lst))
+        )
+    )
+)
+
+(define-fun-rec
+    refl-list-len
+    (
+        (lst (List Refl))
+    )
+    Int
+    (if
+        (= lst (as nil (List Refl)))
+        0
+        (+
+            1
+            (refl-list-len (tail lst))
+        )
+    )
+)
+
+(define-fun-rec
     refl-list-at
     (
         (lst (List Refl))
@@ -1805,6 +2199,24 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
 )
 
 (define-fun-rec
+    refl-list-exists
+    (
+        (lst (List Refl))
+        (sk Refl)
+    )
+    Bool
+    (if
+        (= lst (as nil (List Refl)))
+        false
+        (if
+            (= (head lst) sk)
+            true
+            (refl-list-exists (tail lst) sk)
+        )
+    )
+)
+
+(define-fun-rec
     map-is-uniq
     (
         (lst (List (Entry String Refl)))
@@ -1815,24 +2227,23 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
         true
         (and
             (not (list-exists (tail lst) (key (head lst))))
-            ;(match (value (head lst)) (
-            ;    (undefined true)
-            ;    (null true)
-            ;    ((bool x) true)
-            ;    ((int x) true)
-            ;    (float true)
-            ;    ((str v b) true)
-            ;    ((bytes v b) true)
-            ;    (duration true)
-            ;    (latlng true)
-            ;    (timestamp true)
-            ;    ((list v b) true)
-            ;    ((map x) (map-is-uniq x))
-            ;    ((mapdiff l r b) true)
-            ;    ((set v b) true)
-            ;    (path true)
-            ;))
             (map-is-uniq (tail lst))
+        )
+    )
+)
+
+(define-fun-rec
+    refl-list-is-uniq
+    (
+        (lst (List Refl))
+    )
+    Bool
+    (if
+        (= lst (as nil (List Refl)))
+        true
+        (and
+            (not (refl-list-exists (tail lst) (head lst)))
+            (refl-list-is-uniq (tail lst))
         )
     )
 )
@@ -1974,19 +2385,17 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
 )
 
 (define-fun-rec
-    refl-list-exists
+    list-values
     (
-        (lst (List Refl))
-        (sk Refl)
+        (lst (List (Entry String Refl)))
     )
-    Bool
+    (List Refl)
     (if
-        (= lst (as nil (List Refl)))
-        false
-        (if
-            (= (head lst) sk)
-            true
-            (refl-list-exists (tail lst) sk)
+        (= lst (as nil (List (Entry String Refl))))
+        (as nil (List Refl))
+        (insert
+            (value (head lst))
+            (list-values (tail lst))
         )
     )
 )
@@ -2004,6 +2413,23 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
         (and
             (refl-list-exists right (head left))
             (refl-list-in-refl-list (tail left) right)
+        )
+    )
+)
+
+(define-fun-rec
+    refl-list-is-not-exclusive
+    (
+        (left (List Refl))
+        (right (List Refl))
+    )
+    Bool
+    (if
+        (= left (as nil (List Refl)))
+        true
+        (or
+            (refl-list-exists right (head left))
+            (refl-list-is-not-exclusive (tail left) right)
         )
     )
 )
