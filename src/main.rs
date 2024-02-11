@@ -1,10 +1,12 @@
 use miette::Report;
 use std::{collections::HashSet, fs};
+use tree_sitter::Parser;
 
 use crate::{
     analyser::{analyze, AnalysysGlobalContext},
     binder::bind,
     checker::{check, TypeCheckContext, TypeCheckResult},
+    formatter::format,
     globals::get_globals,
     parser::parse,
 };
@@ -13,6 +15,7 @@ mod analyser;
 mod ast;
 mod binder;
 mod checker;
+mod formatter;
 mod globals;
 mod interfaces;
 mod orany;
@@ -25,7 +28,18 @@ fn main() {
 
     let code = fs::read_to_string("./tmp/realworld.rules").unwrap();
 
-    let ast = parse(&code);
+    let mut tree_sitter_parser = Parser::new();
+    tree_sitter_parser
+        .set_language(tree_sitter_rules::language())
+        .unwrap();
+    // TODO: get parser error
+    let low_ast = tree_sitter_parser.parse(&code, None).unwrap();
+
+    let formatted_code = format(low_ast.clone(), &code);
+
+    println!("{}", formatted_code);
+
+    let ast = parse(low_ast, &code);
 
     // println!("{:#?}", ast);
 
@@ -59,23 +73,23 @@ fn main() {
     //     .chain(type_check_result.iter().map(|x| Report::from((*x).clone())))
     //     .collect();
 
-    let analysys_global_context = AnalysysGlobalContext {
-        bindings: &bindings,
-        symbol_references: &symbol_references,
-        source_code: &code,
-    };
+    // let analysys_global_context = AnalysysGlobalContext {
+    //     bindings: &bindings,
+    //     symbol_references: &symbol_references,
+    //     source_code: &code,
+    // };
 
-    let analyse_result = analyze(&analysys_global_context, &ast);
+    // let analyse_result = analyze(&analysys_global_context, &ast);
 
-    let results: Vec<Report> = bind_lint_result
-        .into_iter()
-        .chain(analyse_result.iter().map(|x| Report::from((*x).clone())))
-        .collect();
+    // let results: Vec<Report> = bind_lint_result
+    //     .into_iter()
+    //     .chain(analyse_result.iter().map(|x| Report::from((*x).clone())))
+    //     .collect();
 
-    let result_count = results.len();
-    for result in results {
-        println!("{:?}", result.with_source_code(code.clone()));
-    }
+    // let result_count = results.len();
+    // for result in results {
+    //     println!("{:?}", result.with_source_code(code.clone()));
+    // }
 
-    println!("{} errors found.", result_count);
+    // println!("{} errors found.", result_count);
 }

@@ -5,28 +5,15 @@ struct Context<'a> {
     pub source_code: &'a String,
 }
 
-pub fn parse(tree: Tree, code: &String) -> Ast {
-    // TODO: catch error
-    let ast = tree_sitter_parser_tree_to_ast(tree, code.into());
-    ast
-}
-
-fn tree_sitter_parser_tree_to_ast(parser_tree: Tree, source_code: String) -> Ast {
-    Ast {
-        tree: parse_code(
-            &parser_tree.root_node(),
-            &Context {
-                source_code: &source_code,
-            },
-        ),
-    }
+pub fn format(tree: Tree, code: &String) -> String {
+    format_code(&tree.root_node(), &Context { source_code: code })
 }
 
 fn get_text<'a>(n: &Node, context: &'a Context) -> &'a str {
     n.utf8_text(context.source_code.as_bytes()).unwrap()
 }
 
-fn parse_string(x: &str) -> String {
+fn format_string(x: &str) -> String {
     if x.starts_with('"') && x.ends_with('"') {
         x[1..x.len() - 1].replace("\\\"", "\"")
     } else if x.starts_with('\'') && x.ends_with('\'') {
@@ -36,24 +23,24 @@ fn parse_string(x: &str) -> String {
     }
 }
 
-fn parse_literal(_node: &Node, context: &Context) -> Literal {
+fn format_literal(_node: &Node, context: &Context) -> Literal {
     let node = _node.child(0).unwrap();
     match node.kind() {
-        "string" => Literal::String(parse_string(get_text(&node, context))),
+        "string" => Literal::String(format_string(get_text(&node, context))),
         "int" => Literal::Int(get_text(&node, context).parse::<i64>().unwrap()),
         "float" => Literal::Float(get_text(&node, context).parse::<f64>().unwrap()),
         "boolean" => Literal::Bool(get_text(&node, context).parse::<bool>().unwrap()),
         "list" => Literal::List(
             node.children_by_field_name("element", &mut node.walk())
-                .map(|node| parse_expression(&node, context))
+                .map(|node| format_expression(&node, context))
                 .collect(),
         ),
         "map" => Literal::Map(
             node.children_by_field_name("entry", &mut node.walk())
                 .map(|node| {
                     (
-                        parse_string(get_text(&node.child_by_field_name("key").unwrap(), context)),
-                        parse_expression(&node.child_by_field_name("value").unwrap(), context),
+                        format_string(get_text(&node.child_by_field_name("key").unwrap(), context)),
+                        format_expression(&node.child_by_field_name("value").unwrap(), context),
                     )
                 })
                 .collect(),
@@ -70,7 +57,7 @@ fn parse_literal(_node: &Node, context: &Context) -> Literal {
                             span: Span(node.range()),
                             kind: ExpressionKind::FunctionCallExpression(
                                 "string".to_owned(),
-                                vec![parse_expression(
+                                vec![format_expression(
                                     &node.child_by_field_name("value").unwrap(),
                                     context,
                                 )],
@@ -89,12 +76,12 @@ fn parse_literal(_node: &Node, context: &Context) -> Literal {
     }
 }
 
-fn parse_expression(node: &Node, context: &Context) -> Expression {
+fn format_expression(node: &Node, context: &Context) -> Expression {
     Expression {
         id: NodeID::new(),
         span: Span(node.range()),
         kind: match node.kind() {
-            "literal" => ExpressionKind::Literal(parse_literal(node, context)),
+            "literal" => ExpressionKind::Literal(format_literal(node, context)),
             "identifier" => ExpressionKind::Variable(get_text(node, context).into()),
             "unary_expression" => ExpressionKind::UnaryOperation(
                 match node.child_by_field_name("operator").unwrap().kind() {
@@ -102,7 +89,7 @@ fn parse_expression(node: &Node, context: &Context) -> Expression {
                     "-" => UnaryLiteral::Minus,
                     _ => panic!(),
                 },
-                Box::new(parse_expression(
+                Box::new(format_expression(
                     &node.child_by_field_name("expression").unwrap(),
                     context,
                 )),
@@ -125,55 +112,55 @@ fn parse_expression(node: &Node, context: &Context) -> Expression {
                     "in" => BinaryLiteral::In,
                     _ => panic!(),
                 },
-                Box::new(parse_expression(
+                Box::new(format_expression(
                     &node.child_by_field_name("left").unwrap(),
                     context,
                 )),
-                Box::new(parse_expression(
+                Box::new(format_expression(
                     &node.child_by_field_name("right").unwrap(),
                     context,
                 )),
             ),
             "ternary_expression" => ExpressionKind::TernaryOperation(
-                Box::new(parse_expression(
+                Box::new(format_expression(
                     &node.child_by_field_name("condition").unwrap(),
                     context,
                 )),
-                Box::new(parse_expression(
+                Box::new(format_expression(
                     &node.child_by_field_name("true").unwrap(),
                     context,
                 )),
-                Box::new(parse_expression(
+                Box::new(format_expression(
                     &node.child_by_field_name("false").unwrap(),
                     context,
                 )),
             ),
             "typecheck_expression" => ExpressionKind::TypeCheckOperation(
-                Box::new(parse_expression(
+                Box::new(format_expression(
                     &node.child_by_field_name("expression").unwrap(),
                     context,
                 )),
                 get_text(&node.child_by_field_name("type").unwrap(), context).into(),
             ),
             "paran" => {
-                parse_expression(&node.child_by_field_name("expression").unwrap(), context).kind
+                format_expression(&node.child_by_field_name("expression").unwrap(), context).kind
             }
             "member_expression" => ExpressionKind::MemberExpression(
-                Box::new(parse_expression(
+                Box::new(format_expression(
                     &node.child_by_field_name("object").unwrap(),
                     context,
                 )),
-                Box::new(parse_expression(
+                Box::new(format_expression(
                     &node.child_by_field_name("member").unwrap(),
                     context,
                 )),
             ),
             "subscript_expression" => ExpressionKind::SubscriptExpression(
-                Box::new(parse_expression(
+                Box::new(format_expression(
                     &node.child_by_field_name("object").unwrap(),
                     context,
                 )),
-                Box::new(parse_expression(
+                Box::new(format_expression(
                     &node.child_by_field_name("subscript").unwrap(),
                     context,
                 )),
@@ -183,7 +170,7 @@ fn parse_expression(node: &Node, context: &Context) -> Expression {
                 node.child_by_field_name("params")
                     .unwrap()
                     .children_by_field_name("param", &mut node.walk())
-                    .map(|node| parse_expression(&node, context))
+                    .map(|node| format_expression(&node, context))
                     .collect(),
             ),
             _ => panic!(),
@@ -191,7 +178,7 @@ fn parse_expression(node: &Node, context: &Context) -> Expression {
     }
 }
 
-fn parse_function(node: &Node, context: &Context) -> Function {
+fn format_function(node: &Node, context: &Context) -> Function {
     Function {
         id: NodeID::new(),
         span: Span(node.range()),
@@ -214,13 +201,13 @@ fn parse_function(node: &Node, context: &Context) -> Function {
                 id: NodeID::new(),
                 span: Span(node.range()),
                 name: get_text(&node.child_by_field_name("name").unwrap(), context).into(),
-                expression: parse_expression(
+                expression: format_expression(
                     &node.child_by_field_name("expression").unwrap(),
                     context,
                 ),
             })
             .collect(),
-        return_expression: parse_expression(
+        return_expression: format_expression(
             &node
                 .child_by_field_name("body")
                 .unwrap()
@@ -233,7 +220,7 @@ fn parse_function(node: &Node, context: &Context) -> Function {
     }
 }
 
-fn parse_rule(node: &Node, context: &Context) -> Rule {
+fn format_rule(node: &Node, context: &Context) -> Rule {
     Rule {
         id: NodeID::new(),
         span: Span(node.range()),
@@ -250,11 +237,11 @@ fn parse_rule(node: &Node, context: &Context) -> Rule {
                 _ => panic!(),
             })
             .collect(),
-        condition: parse_expression(&node.child_by_field_name("expression").unwrap(), context),
+        condition: format_expression(&node.child_by_field_name("expression").unwrap(), context),
     }
 }
 
-fn parse_rule_groups(node: &Node, context: &Context) -> RuleGroup {
+fn format_rule_groups(node: &Node, context: &Context) -> RuleGroup {
     RuleGroup {
         id: NodeID::new(),
         span: Span(node.range()),
@@ -283,48 +270,91 @@ fn parse_rule_groups(node: &Node, context: &Context) -> RuleGroup {
             .collect(),
         functions: node
             .children_by_field_name("function", &mut node.walk())
-            .map(|node| parse_function(&node, context))
+            .map(|node| format_function(&node, context))
             .collect(),
         rule_groups: node
             .children_by_field_name("match", &mut node.walk())
-            .map(|node| parse_rule_groups(&node, context))
+            .map(|node| format_rule_groups(&node, context))
             .collect(),
         rules: node
             .children_by_field_name("allow", &mut node.walk())
-            .map(|node| parse_rule(&node, context))
+            .map(|node| format_rule(&node, context))
             .collect(),
     }
 }
 
-fn parse_code(node: &Node, context: &Context) -> RulesTree {
-    RulesTree {
-        id: NodeID::new(),
-        span: Span(node.range()),
-        version: node.child_by_field_name("version").map(|version| {
-            parse_string(get_text(
-                &version.child_by_field_name("version").unwrap(),
-                context,
-            ))
-        }),
-        services: node
-            .children_by_field_name("service", &mut node.walk())
-            .map(|node| Service {
-                id: NodeID::new(),
-                span: Span(node.range()),
-                service_type: match get_text(&node.child_by_field_name("name").unwrap(), context) {
-                    "cloud.firestore" => ServiceType::Firestore,
-                    "firebase.storage" => ServiceType::Storage,
-                    _ => panic!(),
-                },
-                functions: node
-                    .children_by_field_name("function", &mut node.walk())
-                    .map(|node| parse_function(&node, context))
-                    .collect(),
-                rule_groups: node
-                    .children_by_field_name("match", &mut node.walk())
-                    .map(|node| parse_rule_groups(&node, context))
-                    .collect(),
-            })
-            .collect(),
+fn format_version(node: &Node, context: &Context) -> String {
+    let mut result = "".to_owned();
+    let mut cursor = node.walk();
+    cursor.goto_first_child();
+    loop {
+        println!("{:?} {:?}", cursor.field_name(), cursor.node().kind());
+        match (cursor.field_name(), cursor.node().kind()) {
+            (_, "comment") => {
+                result.push_str(get_text(&cursor.node(), context));
+            }
+            (Some("version"), _) => result.push_str(
+                format!("rules_version = {};\n", get_text(&cursor.node(), context)).as_str(),
+            ),
+            _ => {}
+        }
+        if !cursor.goto_next_sibling() {
+            break;
+        }
     }
+    result
+}
+
+fn format_code(node: &Node, context: &Context) -> String {
+    let mut result = "".to_owned();
+    let mut cursor = node.walk();
+    cursor.goto_first_child();
+    loop {
+        println!("{:?} {:?}", cursor.field_name(), cursor.node().kind());
+        match (cursor.field_name(), cursor.node().kind()) {
+            (_, "comment") => {
+                result.push_str(get_text(&cursor.node(), context));
+            }
+            (Some("version"), _) => {
+                result.push_str("\n");
+                result.push_str(format_version(&cursor.node(), context).as_str());
+            }
+            _ => {}
+        }
+        if !cursor.goto_next_sibling() {
+            break;
+        }
+    }
+    result
+
+    // RulesTree {
+    //     id: NodeID::new(),
+    //     span: Span(node.range()),
+    //     version: node.child_by_field_name("version").map(|version| {
+    //         format_string(get_text(
+    //             &version.child_by_field_name("version").unwrap(),
+    //             context,
+    //         ))
+    //     }),
+    //     services: node
+    //         .children_by_field_name("service", &mut node.walk())
+    //         .map(|node| Service {
+    //             id: NodeID::new(),
+    //             span: Span(node.range()),
+    //             service_type: match get_text(&node.child_by_field_name("name").unwrap(), context) {
+    //                 "cloud.firestore" => ServiceType::Firestore,
+    //                 "firebase.storage" => ServiceType::Storage,
+    //                 _ => panic!(),
+    //             },
+    //             functions: node
+    //                 .children_by_field_name("function", &mut node.walk())
+    //                 .map(|node| format_function(&node, context))
+    //                 .collect(),
+    //             rule_groups: node
+    //                 .children_by_field_name("match", &mut node.walk())
+    //                 .map(|node| format_rule_groups(&node, context))
+    //                 .collect(),
+    //         })
+    //         .collect(),
+    // }
 }
