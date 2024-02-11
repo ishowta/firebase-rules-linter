@@ -1633,9 +1633,8 @@ fn check_rule<'a, 'b>(
 
         // check condition is always ture/false
         if let Expression {
-            id: _,
-            span: _,
             kind: ExpressionKind::Literal(Literal::Bool(_)),
+            ..
         } = rule.condition
         {
         } else {

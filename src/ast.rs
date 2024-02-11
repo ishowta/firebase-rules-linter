@@ -42,9 +42,16 @@ impl Into<SourceSpan> for &Span {
 }
 
 #[derive(Clone, Debug)]
+pub struct Comment {
+    pub span: Span,
+    pub text: String,
+}
+
+#[derive(Clone, Debug)]
 pub struct RulesTree {
     pub id: NodeID,
     pub span: Span,
+    pub comments: Vec<Comment>,
     pub version: Option<String>,
     pub services: Vec<Service>,
 }
@@ -53,6 +60,7 @@ pub struct RulesTree {
 pub struct Service {
     pub id: NodeID,
     pub span: Span,
+    pub comments: Vec<Comment>,
     pub service_type: ServiceType,
     pub functions: Vec<Function>,
     pub rule_groups: Vec<RuleGroup>,
@@ -68,6 +76,7 @@ pub enum ServiceType {
 pub struct Function {
     pub id: NodeID,
     pub span: Span,
+    pub comments: Vec<Comment>,
     pub name: String,
     pub arguments: Vec<Argument>,
     pub let_bindings: Vec<LetBinding>,
@@ -78,6 +87,7 @@ pub struct Function {
 pub struct Argument {
     pub id: NodeID,
     pub span: Span,
+    pub comments: Vec<Comment>,
     pub name: String,
 }
 
@@ -85,6 +95,7 @@ pub struct Argument {
 pub struct LetBinding {
     pub id: NodeID,
     pub span: Span,
+    pub comments: Vec<Comment>,
     pub name: String,
     pub expression: Expression,
 }
@@ -93,6 +104,7 @@ pub struct LetBinding {
 pub struct RuleGroup {
     pub id: NodeID,
     pub span: Span,
+    pub comments: Vec<Comment>,
     pub match_path: Vec<MatchPathLiteral>,
     pub functions: Vec<Function>,
     pub rules: Vec<Rule>,
@@ -110,6 +122,7 @@ pub enum MatchPathLiteral {
 pub struct PathCapture {
     pub id: NodeID,
     pub span: Span,
+    pub comments: Vec<Comment>,
     pub name: String,
 }
 
@@ -117,6 +130,7 @@ pub struct PathCapture {
 pub struct PathCaptureGroup {
     pub id: NodeID,
     pub span: Span,
+    pub comments: Vec<Comment>,
     pub name: String,
 }
 
@@ -124,6 +138,7 @@ pub struct PathCaptureGroup {
 pub struct Rule {
     pub id: NodeID,
     pub span: Span,
+    pub comments: Vec<Comment>,
     pub permissions: Vec<Permission>,
     pub condition: Expression,
 }
@@ -143,6 +158,7 @@ pub enum Permission {
 pub struct Expression {
     pub id: NodeID,
     pub span: Span,
+    pub comments: Vec<Comment>,
     pub kind: ExpressionKind,
 }
 
@@ -235,6 +251,7 @@ impl Display for BinaryLiteral {
 pub trait Node {
     fn get_id(&self) -> &NodeID;
     fn get_span(&self) -> &Span;
+    fn get_comments(&self) -> &Vec<Comment>;
 }
 
 impl<'a> std::fmt::Debug for dyn Node + 'a {
@@ -252,6 +269,9 @@ macro_rules! impl_node_trait {
                 }
                 fn get_span(&self) -> &Span {
                     &self.span
+                }
+                fn get_comments(&self) -> &Vec<Comment> {
+                    &self.comments
                 }
             }
         )+
