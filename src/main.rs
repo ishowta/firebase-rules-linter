@@ -2,7 +2,7 @@ use miette::Report;
 use std::{collections::HashSet, fs};
 
 use crate::{
-    analyser::{analyze, AnalysysGlobalContext},
+    analyser::{analyze, types::AnalysysGlobalContext},
     binder::bind,
     checker::{check, TypeCheckContext, TypeCheckResult},
     globals::get_globals,
