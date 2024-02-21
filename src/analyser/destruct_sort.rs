@@ -2,6 +2,34 @@ use crate::ast::Node;
 
 use super::z3::{Constraint, Declaration, Sort, Symbol};
 
+pub fn destruct_undefined(refl_sym: &Symbol) -> Constraint {
+    Constraint::new2("=", refl_sym, &Constraint::mono("undefined"))
+}
+
+pub fn destruct_null(refl_sym: &Symbol) -> Constraint {
+    Constraint::new2("=", refl_sym, &Constraint::mono("null"))
+}
+
+pub fn destruct_float(refl_sym: &Symbol) -> Constraint {
+    Constraint::new2("=", refl_sym, &Constraint::mono("float"))
+}
+
+pub fn destruct_duration(refl_sym: &Symbol) -> Constraint {
+    Constraint::new2("=", refl_sym, &Constraint::mono("duration"))
+}
+
+pub fn destruct_latlng(refl_sym: &Symbol) -> Constraint {
+    Constraint::new2("=", refl_sym, &Constraint::mono("latlng"))
+}
+
+pub fn destruct_timestamp(refl_sym: &Symbol) -> Constraint {
+    Constraint::new2("=", refl_sym, &Constraint::mono("timestamp"))
+}
+
+pub fn destruct_path(refl_sym: &Symbol) -> Constraint {
+    Constraint::new2("=", refl_sym, &Constraint::mono("path"))
+}
+
 pub fn destruct_bool(
     refl_sym: &Symbol,
     expr: &dyn Node,

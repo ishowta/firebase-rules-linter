@@ -27,17 +27,17 @@ impl<'a> VariableNodeRef<'a> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum FunctionNodeRef<'a> {
     Function(&'a Function),
-    GlobalFunction(&'a Vec<FunctionInterface<'a>>),
+    GlobalFunction(Option<String>, String, &'a Vec<FunctionInterface<'a>>),
 }
 
 impl<'a> FunctionNodeRef<'a> {
     pub fn get_node(&'a self) -> Option<&'a dyn Node> {
         match self {
             FunctionNodeRef::Function(node) => Some(*node),
-            FunctionNodeRef::GlobalFunction(_) => None,
+            FunctionNodeRef::GlobalFunction(_, _, _) => None,
         }
     }
 }

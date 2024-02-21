@@ -252,6 +252,7 @@ impl Constraint {
     build_n_args_constraint_constructor!(new3, arg1, arg2, arg3);
     build_n_args_constraint_constructor!(new4, arg1, arg2, arg3, arg4);
     build_n_args_constraint_constructor!(new5, arg1, arg2, arg3, arg4, arg5);
+    build_n_args_constraint_constructor!(new6, arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
 impl From<Literal> for Constraint {

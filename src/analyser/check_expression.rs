@@ -1,11 +1,14 @@
+use std::iter::zip;
+
 use crate::{
     ast::{Expression, ExpressionKind},
-    symbol::VariableNodeRef,
+    symbol::{FunctionNodeRef, VariableNodeRef},
     ty::FunctionKind,
 };
 
 use super::{
     check_function::check_function_calling,
+    check_global_function::check_global_function_calling,
     types::{AnalysysContext, Res},
     z3::{Constraint, Declaration, Literal, Sort, Symbol},
 };
@@ -130,7 +133,7 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
             }
             crate::ast::Literal::Path(_) => vec![Constraint::new2("=", &cur_value, &"path")],
         },
-        ExpressionKind::Variable(_) => match ctx
+        ExpressionKind::Variable(name) => match ctx
             .bindings
             .variable_table
             .get(&cur_expr.id)
@@ -140,30 +143,41 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
             Some(variable_node_ref) => match variable_node_ref {
                 VariableNodeRef::LetBinding(node) => {
                     let value = ctx.variable_bindings.get(&node.id).unwrap();
-                    vec![Constraint::new2("=", &cur_value, *value)]
+                    vec![Constraint::new2("=", &cur_value, value)]
                 }
                 VariableNodeRef::FunctionArgument(node) => {
                     let value = ctx.variable_bindings.get(&node.id).unwrap();
-                    vec![Constraint::new2("=", &cur_value, *value)]
+                    vec![Constraint::new2("=", &cur_value, value)]
                 }
                 VariableNodeRef::PathCapture(node) => {
                     let value = ctx.variable_bindings.get(&node.id).unwrap();
-                    vec![Constraint::new2("=", &cur_value, *value)]
+                    vec![Constraint::new2("=", &cur_value, value)]
                 }
                 VariableNodeRef::PathCaptureGroup(node) => {
                     let value = ctx.variable_bindings.get(&node.id).unwrap();
-                    vec![Constraint::new2("=", &cur_value, *value)]
+                    vec![Constraint::new2("=", &cur_value, value)]
                 }
-                VariableNodeRef::GlobalVariable(_) => {
-                    // TODO
-                    vec![Constraint::new2(
-                        "=",
-                        &cur_value,
-                        &Symbol {
-                            smtlib2: "request_resource_data".to_string(),
-                        },
-                    )]
-                }
+                VariableNodeRef::GlobalVariable(_) => match name.as_str() {
+                    "request" => {
+                        vec![Constraint::new2(
+                            "=",
+                            &cur_value,
+                            &Symbol {
+                                smtlib2: "request".to_string(),
+                            },
+                        )]
+                    }
+                    "resource" => {
+                        vec![Constraint::new2(
+                            "=",
+                            &cur_value,
+                            &Symbol {
+                                smtlib2: "resource".to_string(),
+                            },
+                        )]
+                    }
+                    _ => panic!(),
+                },
             },
         },
         ExpressionKind::TypeCheckOperation(target_expr, type_name) => {
@@ -330,14 +344,72 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                 .iter()
                 .map(|expr| check_expression(ctx, expr))
                 .collect();
-            check_function_calling(
-                cur_expr,
-                ctx,
-                &FunctionKind::Function(fn_name.clone()),
-                &params_res.iter().map(|x| x).collect(),
-                &cur_value,
-                ctx.declarations.borrow_mut().as_mut(),
-            )
+            match ctx
+                .bindings
+                .function_table
+                .get(&cur_expr.id)
+                .and_then(|node| Some(&node.1))
+            {
+                Some(FunctionNodeRef::Function(function)) => {
+                    let mut constraints: Vec<Constraint> = params_res
+                        .iter()
+                        .flat_map(|res| res.constraints.clone())
+                        .collect();
+                    let mut variable_bindings = ctx.variable_bindings.clone();
+
+                    // args
+                    if function.arguments.len() != params_expr.len() {
+                        panic!()
+                    }
+                    for (arg, param) in zip(&function.arguments, params_res) {
+                        variable_bindings.insert(&arg.id, param.value.clone());
+                    }
+
+                    // let bindings
+                    for let_binding in &function.let_bindings {
+                        let let_res = check_expression(
+                            &AnalysysContext {
+                                bindings: ctx.bindings,
+                                symbol_references: ctx.symbol_references,
+                                source_code: ctx.source_code,
+                                declarations: ctx.declarations,
+                                variable_bindings: &variable_bindings,
+                            },
+                            &let_binding.expression,
+                        );
+                        variable_bindings.insert(&let_binding.id, let_res.value.clone());
+                        constraints.extend(let_res.constraints);
+                    }
+
+                    // return expression
+                    let return_res = check_expression(
+                        &AnalysysContext {
+                            bindings: ctx.bindings,
+                            symbol_references: ctx.symbol_references,
+                            source_code: ctx.source_code,
+                            declarations: ctx.declarations,
+                            variable_bindings: &variable_bindings,
+                        },
+                        &function.return_expression,
+                    );
+                    constraints.extend(return_res.constraints);
+                    constraints.push(Constraint::new2("=", &return_res.value, &cur_value));
+
+                    constraints
+                }
+                Some(FunctionNodeRef::GlobalFunction(namespace, _, _)) => {
+                    check_global_function_calling(
+                        cur_expr,
+                        ctx,
+                        namespace,
+                        &fn_name,
+                        &params_res.iter().map(|x| x).collect(),
+                        &cur_value,
+                        ctx.declarations.borrow_mut().as_mut(),
+                    )
+                }
+                None => panic!(),
+            }
         }
         ExpressionKind::TernaryOperation(cond_expr, left_expr, right_expr) => {
             let cond_res = check_expression(ctx, &cond_expr);
@@ -366,58 +438,65 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                 ),
             )]
         }
-        ExpressionKind::MemberExpression(obj_expr, member_expr) => match &member_expr.kind {
-            ExpressionKind::Variable(variable_name) => {
-                let obj_res = check_expression(ctx, &obj_expr);
-                let member_res = check_expression(ctx, &member_expr);
+        ExpressionKind::MemberExpression(obj_expr, member_expr) => {
+            // check is namespace
+            if let Some(_) = ctx.bindings.function_table.get(&member_expr.id) {
+                return check_expression(ctx, &member_expr);
+            }
 
-                let obj_inner_sym = Symbol::new(obj_expr as &Expression);
-                ctx.declarations
-                    .borrow_mut()
-                    .push(Declaration::new(&obj_inner_sym, &Sort::Map));
+            match &member_expr.kind {
+                ExpressionKind::Variable(variable_name) => {
+                    let obj_res = check_expression(ctx, &obj_expr);
+                    let member_res = check_expression(ctx, &member_expr);
 
-                obj_res
-                    .constraints
-                    .iter()
-                    .chain(member_res.constraints.iter())
-                    .chain(
-                        [
-                            Constraint::new2(
-                                "=",
-                                &obj_res.value,
-                                &Constraint::new1("map", &obj_inner_sym),
-                            ),
-                            Constraint::new2("=", &cur_value, &member_res.value),
-                            Constraint::new2(
-                                "=",
-                                &member_res.value,
-                                &Constraint::new2("list-get", &obj_inner_sym, variable_name),
-                            ),
-                        ]
-                        .iter(),
+                    let obj_inner_sym = Symbol::new(obj_expr as &Expression);
+                    ctx.declarations
+                        .borrow_mut()
+                        .push(Declaration::new(&obj_inner_sym, &Sort::Map));
+
+                    obj_res
+                        .constraints
+                        .iter()
+                        .chain(member_res.constraints.iter())
+                        .chain(
+                            [
+                                Constraint::new2(
+                                    "=",
+                                    &obj_res.value,
+                                    &Constraint::new1("map", &obj_inner_sym),
+                                ),
+                                Constraint::new2("=", &cur_value, &member_res.value),
+                                Constraint::new2(
+                                    "=",
+                                    &member_res.value,
+                                    &Constraint::new2("list-get", &obj_inner_sym, variable_name),
+                                ),
+                            ]
+                            .iter(),
+                        )
+                        .cloned()
+                        .collect()
+                }
+                ExpressionKind::FunctionCallExpression(fn_name, params_expr) => {
+                    let obj_res = check_expression(ctx, &obj_expr);
+                    let params_res: Vec<_> = params_expr
+                        .iter()
+                        .map(|expr| check_expression(ctx, expr))
+                        .collect();
+                    let mut params = vec![&obj_res];
+                    params.extend(params_res.iter().map(|x| x));
+                    check_function_calling(
+                        cur_expr,
+                        ctx,
+                        &FunctionKind::Function(fn_name.clone()),
+                        &params,
+                        &cur_value,
+                        ctx.declarations.borrow_mut().as_mut(),
                     )
-                    .cloned()
-                    .collect()
+                }
+                _ => panic!(),
             }
-            ExpressionKind::FunctionCallExpression(fn_name, params_expr) => {
-                let obj_res = check_expression(ctx, &obj_expr);
-                let params_res: Vec<_> = params_expr
-                    .iter()
-                    .map(|expr| check_expression(ctx, expr))
-                    .collect();
-                let mut params = vec![&obj_res];
-                params.extend(params_res.iter().map(|x| x));
-                check_function_calling(
-                    cur_expr,
-                    ctx,
-                    &FunctionKind::Function(fn_name.clone()),
-                    &params,
-                    &cur_value,
-                    ctx.declarations.borrow_mut().as_mut(),
-                )
-            }
-            _ => panic!(),
-        },
+        }
     };
     Res {
         value: cur_value,

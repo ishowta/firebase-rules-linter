@@ -43,12 +43,15 @@ impl std::fmt::Debug for Bindings<'_> {
                 &self
                     .function_table
                     .iter()
-                    .map(|(k, v)| match v.1 {
+                    .map(|(k, v)| match &v.1 {
                         FunctionNodeRef::Function(x) => {
                             format!("{} ({}) -> ({}:{})", x.name, k.0, x.id.0, v.0 .0)
                         }
-                        FunctionNodeRef::GlobalFunction(n) => {
-                            format!("{:?} ({}) -> (__global__:{})", n, k.0, v.0 .0)
+                        FunctionNodeRef::GlobalFunction(namespace, name, n) => {
+                            format!(
+                                "{:?} {} {:?} ({}) -> (__global__:{})",
+                                namespace, name, n, k.0, v.0 .0
+                            )
                         }
                     })
                     .collect::<Vec<String>>(),
@@ -587,7 +590,10 @@ pub fn bind<'a>(
             .map(|(name, func)| {
                 (
                     *name,
-                    (SymbolID::new(), FunctionNodeRef::GlobalFunction(func)),
+                    (
+                        SymbolID::new(),
+                        FunctionNodeRef::GlobalFunction(None, (*name).to_owned(), func),
+                    ),
                 )
             })
             .collect(),
@@ -602,7 +608,14 @@ pub fn bind<'a>(
                         .map(|(name, func)| {
                             (
                                 *name,
-                                (SymbolID::new(), FunctionNodeRef::GlobalFunction(func)),
+                                (
+                                    SymbolID::new(),
+                                    FunctionNodeRef::GlobalFunction(
+                                        Some((*namespace).to_owned()),
+                                        (*name).to_owned(),
+                                        func,
+                                    ),
+                                ),
                             )
                         })
                         .collect(),

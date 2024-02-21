@@ -1537,7 +1537,7 @@ got: `.{}`",
                 .bindings
                 .function_table
                 .get(&expr.id)
-                .and_then(|node| Some(node.1))
+                .and_then(|node| Some(&node.1))
             {
                 Some(FunctionNodeRef::Function(node)) => {
                     let (return_ty, return_res) = check_function(
@@ -1557,7 +1557,7 @@ got: `.{}`",
                     );
                     (return_ty, [params_res, return_res].concat())
                 }
-                Some(FunctionNodeRef::GlobalFunction(function_ty_candidates)) => {
+                Some(FunctionNodeRef::GlobalFunction(_, _, function_ty_candidates)) => {
                     let (return_ty, return_res) = check_function_args(
                         expr,
                         format!("`{}()`", fn_name),

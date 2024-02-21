@@ -47,5 +47,5 @@ pub struct AnalysysContext<'a, 'ctx> {
     pub symbol_references: &'a SymbolReferences<'a>,
     pub source_code: &'a String,
     pub declarations: &'ctx RefCell<Vec<Declaration>>,
-    pub variable_bindings: &'ctx HashMap<&'a NodeID, &'ctx Symbol>,
+    pub variable_bindings: &'ctx HashMap<&'a NodeID, Symbol>,
 }

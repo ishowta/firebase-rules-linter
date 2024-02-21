@@ -4,6 +4,7 @@ use log::info;
 
 mod check_expression;
 mod check_function;
+mod check_global_function;
 mod destruct_sort;
 mod solver;
 mod z3;
