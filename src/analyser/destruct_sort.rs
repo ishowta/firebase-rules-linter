@@ -2,10 +2,6 @@ use crate::ast::Node;
 
 use super::z3::{Constraint, Declaration, Sort, Symbol};
 
-pub fn destruct_undefined(refl_sym: &Symbol) -> Constraint {
-    Constraint::new2("=", refl_sym, &Constraint::mono("undefined"))
-}
-
 pub fn destruct_null(refl_sym: &Symbol) -> Constraint {
     Constraint::new2("=", refl_sym, &Constraint::mono("null"))
 }
@@ -35,7 +31,7 @@ pub fn destruct_bool(
     expr: &dyn Node,
     declarations: &mut Vec<Declaration>,
 ) -> (Symbol, Constraint) {
-    let dest_value = Symbol::new(expr);
+    let dest_value = Symbol::new(expr, "bool");
     declarations.push(Declaration::new(&dest_value, &Sort::Bool));
     (
         dest_value.clone(),
@@ -48,8 +44,8 @@ pub fn destruct_bytes(
     expr: &dyn Node,
     declarations: &mut Vec<Declaration>,
 ) -> (Symbol, Symbol, Constraint) {
-    let dest_value = Symbol::new(expr);
-    let dest_bytes_sym = Symbol::new(expr);
+    let dest_value = Symbol::new(expr, "bytes");
+    let dest_bytes_sym = Symbol::new(expr, "bytes_bytes");
     declarations.push(Declaration::new(&dest_value, &Sort::String));
     declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
     (
@@ -68,7 +64,7 @@ pub fn destruct_int(
     expr: &dyn Node,
     declarations: &mut Vec<Declaration>,
 ) -> (Symbol, Constraint) {
-    let dest_value = Symbol::new(expr);
+    let dest_value = Symbol::new(expr, "int");
     declarations.push(Declaration::new(&dest_value, &Sort::Int));
     (
         dest_value.clone(),
@@ -81,8 +77,8 @@ pub fn destruct_list(
     expr: &dyn Node,
     declarations: &mut Vec<Declaration>,
 ) -> (Symbol, Symbol, Constraint) {
-    let dest_value = Symbol::new(expr);
-    let dest_bytes_sym = Symbol::new(expr);
+    let dest_value = Symbol::new(expr, "list");
+    let dest_bytes_sym = Symbol::new(expr, "list_bytes");
     declarations.push(Declaration::new(
         &dest_value,
         &Sort::List(Box::new(Sort::Refl)),
@@ -104,7 +100,7 @@ pub fn destruct_map(
     expr: &dyn Node,
     declarations: &mut Vec<Declaration>,
 ) -> (Symbol, Constraint) {
-    let dest_value = Symbol::new(expr);
+    let dest_value = Symbol::new(expr, "map");
     declarations.push(Declaration::new(&dest_value, &Sort::Map));
     (
         dest_value.clone(),
@@ -117,9 +113,9 @@ pub fn destruct_mapdiff(
     expr: &dyn Node,
     declarations: &mut Vec<Declaration>,
 ) -> (Symbol, Symbol, Symbol, Constraint) {
-    let dest_lvalue = Symbol::new(expr);
-    let dest_rvalue = Symbol::new(expr);
-    let dest_bytes_sym = Symbol::new(expr);
+    let dest_lvalue = Symbol::new(expr, "mapdiff_l");
+    let dest_rvalue = Symbol::new(expr, "mapdiff_r");
+    let dest_bytes_sym = Symbol::new(expr, "mapdiff_bytes");
     declarations.push(Declaration::new(&dest_lvalue, &Sort::Map));
     declarations.push(Declaration::new(&dest_rvalue, &Sort::Map));
     declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
@@ -140,8 +136,8 @@ pub fn destruct_set(
     expr: &dyn Node,
     declarations: &mut Vec<Declaration>,
 ) -> (Symbol, Symbol, Constraint) {
-    let dest_value = Symbol::new(expr);
-    let dest_bytes_sym = Symbol::new(expr);
+    let dest_value = Symbol::new(expr, "set");
+    let dest_bytes_sym = Symbol::new(expr, "set_bytes");
     declarations.push(Declaration::new(
         &dest_value,
         &Sort::List(Box::new(Sort::Refl)),
@@ -163,8 +159,8 @@ pub fn destruct_string(
     expr: &dyn Node,
     declarations: &mut Vec<Declaration>,
 ) -> (Symbol, Symbol, Constraint) {
-    let dest_value = Symbol::new(expr);
-    let dest_bytes_sym = Symbol::new(expr);
+    let dest_value = Symbol::new(expr, "str");
+    let dest_bytes_sym = Symbol::new(expr, "str_bytes");
     declarations.push(Declaration::new(&dest_value, &Sort::String));
     declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
     (

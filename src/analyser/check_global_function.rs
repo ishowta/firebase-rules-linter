@@ -53,9 +53,9 @@ pub fn check_global_function_calling(
             let param_constraint = destruct_path(&param_res.value);
             let (cur_val, cur_constraint) = destruct_map(&cur_value, cur_expr, declarations);
 
-            let data_value = Symbol::new(cur_expr);
-            let id_value = Symbol::new(cur_expr);
-            let name_value = Symbol::new(cur_expr);
+            let data_value = Symbol::new(cur_expr, "data");
+            let id_value = Symbol::new(cur_expr, "id");
+            let name_value = Symbol::new(cur_expr, "name");
             declarations.push(Declaration::new(&data_value, &Sort::Refl));
             declarations.push(Declaration::new(&id_value, &Sort::Refl));
             declarations.push(Declaration::new(&name_value, &Sort::Refl));

@@ -1196,7 +1196,7 @@ pub fn check_function_calling(
             let (obj_list_val, obj_list_bytes, obj_list_constraint) =
                 destruct_list(&obj_res.value, cur_expr, declarations);
 
-            let list_bytes_sym = Symbol::new(cur_expr);
+            let list_bytes_sym = Symbol::new(cur_expr, "subscript_bytes");
             declarations.push(Declaration::new(&list_bytes_sym, &Sort::Int));
 
             let (obj_str_val, _, obj_str_constraint) =

@@ -48,9 +48,14 @@ pub struct Symbol {
 }
 
 impl Symbol {
-    pub fn new(node: &dyn Node) -> Symbol {
+    pub fn new(node: &dyn Node, prefix: &str) -> Symbol {
         Symbol {
-            smtlib2: format!("{}-{}", node.get_id().0, nanoid!(6, &alphabet::SAFE[12..])),
+            smtlib2: format!(
+                "{}-{}-{}",
+                prefix,
+                node.get_id().0,
+                nanoid!(6, &alphabet::SAFE[12..])
+            ),
         }
     }
 }

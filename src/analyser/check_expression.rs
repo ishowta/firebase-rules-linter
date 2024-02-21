@@ -13,8 +13,62 @@ use super::{
     z3::{Constraint, Declaration, Literal, Sort, Symbol},
 };
 
+fn expression_to_name(expr: &Expression) -> String {
+    match expr.kind.clone() {
+        ExpressionKind::Literal(lit) => format!(
+            "lit_{}",
+            match lit {
+                crate::ast::Literal::Null => "null",
+                crate::ast::Literal::Bool(_) => "bool",
+                crate::ast::Literal::Int(_) => "int",
+                crate::ast::Literal::Float(_) => "float",
+                crate::ast::Literal::String(_) => "str",
+                crate::ast::Literal::List(_) => "list",
+                crate::ast::Literal::Map(_) => "map",
+                crate::ast::Literal::Path(_) => "path",
+            }
+        ),
+        ExpressionKind::Variable(x) => x,
+        ExpressionKind::UnaryOperation(lit, _) => match lit {
+            crate::ast::UnaryLiteral::Not => "not".to_owned(),
+            crate::ast::UnaryLiteral::Minus => "minus".to_owned(),
+        },
+        ExpressionKind::BinaryOperation(lit, _, _) => match lit {
+            crate::ast::BinaryLiteral::And => "and".to_owned(),
+            crate::ast::BinaryLiteral::Or => "or".to_owned(),
+            crate::ast::BinaryLiteral::Add => "add".to_owned(),
+            crate::ast::BinaryLiteral::Sub => "sub".to_owned(),
+            crate::ast::BinaryLiteral::Mul => "mul".to_owned(),
+            crate::ast::BinaryLiteral::Div => "div".to_owned(),
+            crate::ast::BinaryLiteral::Mod => "mod".to_owned(),
+            crate::ast::BinaryLiteral::Gt => "gt".to_owned(),
+            crate::ast::BinaryLiteral::Gte => "gte".to_owned(),
+            crate::ast::BinaryLiteral::Lt => "lt".to_owned(),
+            crate::ast::BinaryLiteral::Lte => "lte".to_owned(),
+            crate::ast::BinaryLiteral::Eq => "eq".to_owned(),
+            crate::ast::BinaryLiteral::NotEq => "notEq".to_owned(),
+            crate::ast::BinaryLiteral::In => "in".to_owned(),
+        },
+        ExpressionKind::TernaryOperation(_, _, _) => format!("if"),
+        ExpressionKind::TypeCheckOperation(_, ty) => format!("is_{}", ty),
+        ExpressionKind::MemberExpression(obj, member) => {
+            format!(
+                "{}_{}",
+                expression_to_name(&obj),
+                expression_to_name(&member)
+            )
+        }
+        ExpressionKind::SubscriptExpression(obj, member) => format!(
+            "{}_{}",
+            expression_to_name(&obj),
+            expression_to_name(&member)
+        ),
+        ExpressionKind::FunctionCallExpression(name, _) => name,
+    }
+}
+
 pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
-    let cur_value = Symbol::new(cur_expr);
+    let cur_value = Symbol::new(cur_expr, expression_to_name(cur_expr).as_str());
     ctx.declarations
         .borrow_mut()
         .push(Declaration::new(&cur_value, &Sort::Refl));
@@ -184,7 +238,7 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
             let target_res = check_expression(ctx, &target_expr);
             match type_name.as_str() {
                 "bool" => {
-                    let inner_sym = Symbol::new(target_expr as &Expression);
+                    let inner_sym = Symbol::new(target_expr as &Expression, "bool");
                     ctx.declarations
                         .borrow_mut()
                         .push(Declaration::new(&inner_sym, &Sort::Bool));
@@ -195,7 +249,7 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                     )]
                 }
                 "int" => {
-                    let inner_sym = Symbol::new(target_expr as &Expression);
+                    let inner_sym = Symbol::new(target_expr as &Expression, "int");
                     ctx.declarations
                         .borrow_mut()
                         .push(Declaration::new(&inner_sym, &Sort::Int));
@@ -213,7 +267,7 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                     )]
                 }
                 "number" => {
-                    let inner_int_sym = Symbol::new(target_expr as &Expression);
+                    let inner_int_sym = Symbol::new(target_expr as &Expression, "number");
                     ctx.declarations
                         .borrow_mut()
                         .push(Declaration::new(&inner_int_sym, &Sort::Int));
@@ -228,8 +282,8 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                     )]
                 }
                 "string" => {
-                    let inner_value = Symbol::new(target_expr as &Expression);
-                    let inner_bytes_sym = Symbol::new(target_expr as &Expression);
+                    let inner_value = Symbol::new(target_expr as &Expression, "str");
+                    let inner_bytes_sym = Symbol::new(target_expr as &Expression, "str_bytes");
                     ctx.declarations
                         .borrow_mut()
                         .push(Declaration::new(&inner_value, &Sort::String));
@@ -243,8 +297,8 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                     )]
                 }
                 "list" => {
-                    let inner_value = Symbol::new(target_expr as &Expression);
-                    let inner_bytes_sym = Symbol::new(target_expr as &Expression);
+                    let inner_value = Symbol::new(target_expr as &Expression, "list");
+                    let inner_bytes_sym = Symbol::new(target_expr as &Expression, "list_bytes");
                     ctx.declarations.borrow_mut().push(Declaration::new(
                         &inner_value,
                         &Sort::List(Box::new(Sort::Refl)),
@@ -259,7 +313,7 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                     )]
                 }
                 "map" => {
-                    let inner_sym = Symbol::new(target_expr as &Expression);
+                    let inner_sym = Symbol::new(target_expr as &Expression, "map");
                     ctx.declarations
                         .borrow_mut()
                         .push(Declaration::new(&inner_sym, &Sort::Map));
@@ -449,7 +503,7 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                     let obj_res = check_expression(ctx, &obj_expr);
                     let member_res = check_expression(ctx, &member_expr);
 
-                    let obj_inner_sym = Symbol::new(obj_expr as &Expression);
+                    let obj_inner_sym = Symbol::new(obj_expr as &Expression, "obj_map");
                     ctx.declarations
                         .borrow_mut()
                         .push(Declaration::new(&obj_inner_sym, &Sort::Map));
