@@ -159,17 +159,9 @@ pub fn check_function_calling(
                             "=",
                             &cur_inner_val,
                             &Constraint::new2(
-                                "and",
-                                &Constraint::new2(
-                                    "refl-list-in-refl-list",
-                                    &target_list_val,
-                                    &keys_list_val,
-                                ),
-                                &Constraint::new2(
-                                    "<=",
-                                    &Constraint::new1("refl-list-len", &target_list_val),
-                                    &Constraint::new1("refl-list-len", &keys_list_val),
-                                ),
+                                "refl-list-in-refl-list",
+                                &target_list_val,
+                                &keys_list_val,
                             ),
                         ),
                     ),
@@ -182,17 +174,9 @@ pub fn check_function_calling(
                             "=",
                             &cur_inner_val,
                             &Constraint::new2(
-                                "and",
-                                &Constraint::new2(
-                                    "refl-list-in-refl-list",
-                                    &target_set_val,
-                                    &keys_list_val,
-                                ),
-                                &Constraint::new2(
-                                    "<=",
-                                    &Constraint::new1("refl-list-len", &target_set_val),
-                                    &Constraint::new1("refl-list-len", &keys_list_val),
-                                ),
+                                "refl-list-in-refl-list",
+                                &target_set_val,
+                                &keys_list_val,
                             ),
                         ),
                     ),
