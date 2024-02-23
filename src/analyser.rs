@@ -56,6 +56,8 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
 {}
 
 {}
+{}
+{}
 ",
             ctx.declarations
                 .borrow()
@@ -68,12 +70,22 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
                 .map(|constraint| Assert::new(constraint).as_smtlib2())
                 .collect::<Vec<String>>()
                 .join("\n"),
+            Assert::new(&Constraint::new1(
+                "refl-is-valid-data",
+                &Constraint::mono("resource_data")
+            ))
+            .as_smtlib2(),
+            Assert::new(&Constraint::new1(
+                "refl-is-valid-data",
+                &Constraint::mono("request_resource_data")
+            ))
+            .as_smtlib2(),
             Assert::new(&Constraint::new2(
                 "=",
                 &condition_value,
                 &Constraint::new1("bool", &true)
             ))
-            .as_smtlib2()
+            .as_smtlib2(),
         );
         match solve(&source_code) {
             SolverResult::Sat(example) => {
@@ -95,9 +107,9 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
     let check_limit_mode = true;
 
     if is_always_false_unsat == false && check_limit_mode {
-        // 1MB limit
+        // untyped field check
         {
-            info!("check 1MB limit");
+            info!("untyped field check");
             let source_code = format!(
                 "{}
 
@@ -124,16 +136,26 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
                 ))
                 .as_smtlib2(),
                 Assert::new(&Constraint::new2(
-                    ">",
+                    "=",
                     &Constraint::new1(
-                        "list-sum",
-                        &Symbol {
-                            smtlib2: "request_resource_data_inner".to_string()
-                        }
+                        "list-has-untyped-data",
+                        &Constraint::mono("request_resource_data_inner")
                     ),
-                    &(1024 * 1024)
+                    &true
                 ))
-                .as_smtlib2()
+                .as_smtlib2(),
+                // TODO: 1MB limit
+                // Assert::new(&Constraint::new2(
+                //     ">",
+                //     &Constraint::new1(
+                //         "list-sum",
+                //         &Symbol {
+                //             smtlib2: "request_resource_data_inner".to_string()
+                //         }
+                //     ),
+                //     &(1024 * 1024)
+                // ))
+                // .as_smtlib2()
             );
             match solve(&source_code) {
                 SolverResult::Sat(example) => {

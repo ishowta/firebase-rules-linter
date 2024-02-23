@@ -275,6 +275,38 @@
 )
 
 (define-fun-rec
+    list-has-untyped-data
+    (
+        (lst (List (Entry String Refl)))
+    )
+    Bool
+    (if
+        (= lst (as nil (List (Entry String Refl))))
+        false
+        (or
+            (match (value (head lst)) (
+                (undefined true)
+                (null false)
+                ((bool x) false)
+                ((int x) false)
+                (float false)
+                ((str v b) false)
+                ((bytes v b) false)
+                (duration false)
+                (latlng false)
+                (timestamp false)
+                ((list v b) false)
+                ((map x) (list-has-untyped-data x))
+                ((mapdiff l r b) false)
+                ((set v b) false)
+                (path false)
+            ))
+            (list-has-untyped-data (tail lst))
+        )
+    )
+)
+
+(define-fun-rec
     refl-is-valid-data
     (
         (refl Refl)
@@ -395,7 +427,6 @@
 (declare-const resource_data_inner (List (Entry String Refl)))
 (assert (= resource_data (map resource_data_inner)))
 (assert (refl-map-is-uniq resource_data))
-(assert (refl-is-valid-data resource_data))
 
 (declare-const resource_id Refl)
 (declare-const resource_id_inner String)
@@ -420,7 +451,6 @@
 (declare-const request_resource_data_inner (List (Entry String Refl)))
 (assert (= request_resource_data (map request_resource_data_inner)))
 (assert (refl-map-is-uniq request_resource_data))
-(assert (refl-is-valid-data request_resource_data))
 
 (declare-const request_resource_id Refl)
 (declare-const request_resource_id_inner String)
