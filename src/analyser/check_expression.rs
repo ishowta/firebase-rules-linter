@@ -236,7 +236,8 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
         },
         ExpressionKind::TypeCheckOperation(target_expr, type_name) => {
             let target_res = check_expression(ctx, &target_expr);
-            match type_name.as_str() {
+            let mut constraints = target_res.constraints;
+            constraints.extend(match type_name.as_str() {
                 "bool" => {
                     let inner_sym = Symbol::new(target_expr as &Expression, "bool");
                     ctx.declarations
@@ -356,7 +357,8 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                     )]
                 }
                 _ => vec![],
-            }
+            });
+            constraints
         }
         ExpressionKind::UnaryOperation(op_lit, op_param_expr) => {
             let op_param_res = check_expression(ctx, &op_param_expr);

@@ -42,8 +42,8 @@ pub fn check_function_calling(
                 let (obj_string_val, obj_string_bytes, obj_string_constraint) =
                     destruct_string(&obj_val.value, cur_expr, declarations);
 
-                let (_, cur_inner_bytes, cur_constraint) =
-                    destruct_string(&cur_value, cur_expr, declarations);
+                let (cur_inner_val, cur_constraint) =
+                    destruct_int(&cur_value, cur_expr, declarations);
 
                 constraints.push(cur_constraint);
                 constraints.push(Constraint::new5(
@@ -51,14 +51,14 @@ pub fn check_function_calling(
                     &Constraint::new2(
                         "and",
                         &obj_bytes_constraint,
-                        &Constraint::new2("<=", &cur_inner_bytes, &obj_bytes_bytes),
+                        &Constraint::new2("=", &cur_inner_val, &obj_bytes_bytes),
                     ),
                     &Constraint::new2(
                         "and",
                         &obj_list_constraint,
                         &Constraint::new2(
                             "<=",
-                            &cur_inner_bytes,
+                            &cur_inner_val,
                             &Constraint::new1("refl-list-len", &obj_list_val),
                         ),
                     ),
@@ -67,7 +67,7 @@ pub fn check_function_calling(
                         &obj_map_constraint,
                         &Constraint::new2(
                             "<=",
-                            &cur_inner_bytes,
+                            &cur_inner_val,
                             &Constraint::new1("list-len", &obj_map_val),
                         ),
                     ),
@@ -76,14 +76,18 @@ pub fn check_function_calling(
                         &obj_set_constraint,
                         &Constraint::new2(
                             "<=",
-                            &cur_inner_bytes,
+                            &cur_inner_val,
                             &Constraint::new1("refl-list-len", &obj_set_val),
                         ),
                     ),
                     &Constraint::new2(
                         "and",
                         &obj_string_constraint,
-                        &Constraint::new2("<=", &cur_inner_bytes, &obj_string_bytes),
+                        &Constraint::new2(
+                            ">",
+                            &Constraint::new2("*", &cur_inner_val, &4),
+                            &obj_string_bytes,
+                        ),
                     ),
                 ));
                 constraints
@@ -155,9 +159,17 @@ pub fn check_function_calling(
                             "=",
                             &cur_inner_val,
                             &Constraint::new2(
-                                "refl-list-in-refl-list",
-                                &target_list_val,
-                                &keys_list_val,
+                                "and",
+                                &Constraint::new2(
+                                    "refl-list-in-refl-list",
+                                    &target_list_val,
+                                    &keys_list_val,
+                                ),
+                                &Constraint::new2(
+                                    "<=",
+                                    &Constraint::new1("refl-list-len", &target_list_val),
+                                    &Constraint::new1("refl-list-len", &keys_list_val),
+                                ),
                             ),
                         ),
                     ),
@@ -170,9 +182,17 @@ pub fn check_function_calling(
                             "=",
                             &cur_inner_val,
                             &Constraint::new2(
-                                "refl-list-in-refl-list",
-                                &target_set_val,
-                                &keys_list_val,
+                                "and",
+                                &Constraint::new2(
+                                    "refl-list-in-refl-list",
+                                    &target_set_val,
+                                    &keys_list_val,
+                                ),
+                                &Constraint::new2(
+                                    "<=",
+                                    &Constraint::new1("refl-list-len", &target_set_val),
+                                    &Constraint::new1("refl-list-len", &keys_list_val),
+                                ),
                             ),
                         ),
                     ),
@@ -297,15 +317,20 @@ pub fn check_function_calling(
                 constraints
             }
             "join" => {
-                let [obj_val] = args[..] else { panic!() };
+                let [obj_res, param_res] = args[..] else {
+                    panic!()
+                };
                 let (_, obj_inner_bytes, obj_constraint) =
-                    destruct_list(&obj_val.value, cur_expr, declarations);
+                    destruct_list(&obj_res.value, cur_expr, declarations);
+                let (_, _, param_constraint) =
+                    destruct_string(&param_res.value, cur_expr, declarations);
                 let (_, cur_inner_bytes, cur_constraint) =
                     destruct_string(&cur_value, cur_expr, declarations);
                 constraints.extend([
                     obj_constraint,
+                    param_constraint,
                     cur_constraint,
-                    Constraint::new2("<=", &cur_inner_bytes, &obj_inner_bytes),
+                    Constraint::new2(">", &cur_inner_bytes, &obj_inner_bytes),
                 ]);
                 constraints
             }
