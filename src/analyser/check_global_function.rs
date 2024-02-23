@@ -55,7 +55,7 @@ pub fn check_global_function_calling(
 
             let data_value = Symbol::new(cur_expr, "data");
             let id_value = Symbol::new(cur_expr, "id");
-            let name_value = Symbol::new(cur_expr, "name");
+            let name_value = Symbol::new(cur_expr, "__name__");
             declarations.push(Declaration::new(&data_value, &Sort::Refl));
             declarations.push(Declaration::new(&id_value, &Sort::Refl));
             declarations.push(Declaration::new(&name_value, &Sort::Refl));
@@ -71,18 +71,23 @@ pub fn check_global_function_calling(
                 name_constraint,
                 Constraint::new2(
                     "=",
-                    &data_value,
-                    &Constraint::new2("list-get", &cur_val, &"data"),
-                ),
-                Constraint::new2(
-                    "=",
-                    &id_value,
-                    &Constraint::new2("list-get", &cur_val, &"data"),
-                ),
-                Constraint::new2(
-                    "=",
-                    &name_value,
-                    &Constraint::new2("list-get", &cur_val, &"data"),
+                    &cur_val,
+                    &Constraint::new1(
+                        "map",
+                        &Constraint::new2(
+                            "insert",
+                            &Constraint::new2("entry", &"data", &data_value),
+                            &Constraint::new2(
+                                "insert",
+                                &Constraint::new2("entry", &"id", &id_value),
+                                &Constraint::new2(
+                                    "insert",
+                                    &Constraint::new2("entry", &"__name__", &name_value),
+                                    &Constraint::mono("(as nil (List (Entry String Refl)"),
+                                ),
+                            ),
+                        ),
+                    ),
                 ),
             ]);
             constraints

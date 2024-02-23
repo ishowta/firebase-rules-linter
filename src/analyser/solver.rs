@@ -29,6 +29,16 @@ pub enum SolverResult {
 }
 
 pub fn solve(source: &String) -> SolverResult {
+    //     let simplify_input = format!(
+    //         "
+    // {}
+
+    // (apply simplify)
+    // ",
+    //         source
+    //     );
+    //     let simplify_output = run_z3(&simplify_input);
+    //     info!("Simplified: \n{}", simplify_output);
     let input = format!(
         "
 {}
