@@ -29,34 +29,29 @@ pub enum SolverResult {
 }
 
 pub fn solve(source: &String) -> SolverResult {
-    //     let simplify_input = format!(
-    //         "
-    // {}
-
-    // (apply simplify)
-    // ",
-    //         source
-    //     );
-    //     let simplify_output = run_z3(&simplify_input);
-    //     info!("Simplified: \n{}", simplify_output);
     let input = format!(
         "
 {}
 
-(check-sat)
+(apply (then (repeat (then simplify solve-eqs (or-else split-clause skip) dom-simplify))))
+(check-sat-using (then (repeat (then simplify solve-eqs (or-else split-clause skip) dom-simplify)) smt))
 (get-model)
 ",
         source
     );
     let output = run_z3(&input);
-    match output.split("\n").nth(0) {
+    info!("{}", output);
+    match output
+        .split("\n")
+        .find(|line| ["sat", "unsat", "unknown"].contains(line))
+    {
         Some("sat") => {
             SolverResult::Sat(output.split("\n").skip(1).collect::<Vec<&str>>().join("\n"))
         }
         Some("unsat") => SolverResult::Unsat,
         Some("unknown") => SolverResult::Unknown,
         Some(error) => {
-            eprintln!("Z3 Error: {}", error);
+            eprintln!("Z3 Error: {}\n{}", error, output);
             panic!()
         }
         _ => panic!(),

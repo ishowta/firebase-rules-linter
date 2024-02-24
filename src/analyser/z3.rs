@@ -51,9 +51,9 @@ impl Symbol {
     pub fn new(node: &dyn Node, prefix: &str) -> Symbol {
         Symbol {
             smtlib2: format!(
-                "{}-{}-{}",
+                "{}-{}",
                 prefix,
-                node.get_id().0,
+                //node.get_id().0,
                 nanoid!(6, &alphabet::SAFE[12..])
             ),
         }
