@@ -159,7 +159,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
             );
             match solve(&source_code) {
                 SolverResult::Sat(example) => {
-                    errors.push(AnalysysError::new(format!("over 1MB limit"), rule));
+                    errors.push(AnalysysError::new(format!("untyped field allowed"), rule));
                     info!("sat");
                     info!("truthly example:\n{}", example);
                 }
