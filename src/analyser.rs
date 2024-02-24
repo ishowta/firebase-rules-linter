@@ -135,27 +135,27 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
                     &Constraint::new1("bool", &true)
                 ))
                 .as_smtlib2(),
-                Assert::new(&Constraint::new2(
-                    "=",
-                    &Constraint::new1(
-                        "list-has-untyped-data",
-                        &Constraint::mono("request_resource_data_inner")
-                    ),
-                    &true
-                ))
-                .as_smtlib2(),
-                // TODO: 1MB limit
                 // Assert::new(&Constraint::new2(
-                //     ">",
+                //     "=",
                 //     &Constraint::new1(
-                //         "list-sum",
-                //         &Symbol {
-                //             smtlib2: "request_resource_data_inner".to_string()
-                //         }
+                //         "list-has-untyped-data",
+                //         &Constraint::mono("request_resource_data_inner")
                 //     ),
-                //     &(1024 * 1024)
+                //     &true
                 // ))
-                // .as_smtlib2()
+                // .as_smtlib2(),
+                // TODO: 1MB limit
+                Assert::new(&Constraint::new2(
+                    ">",
+                    &Constraint::new1(
+                        "list-sum",
+                        &Symbol {
+                            smtlib2: "request_resource_data_inner".to_string()
+                        }
+                    ),
+                    &(1024 * 1024)
+                ))
+                .as_smtlib2()
             );
             match solve(&source_code) {
                 SolverResult::Sat(example) => {
