@@ -9,6 +9,7 @@ use crate::{
 use super::{
     check_function::check_function_calling,
     check_global_function::check_global_function_calling,
+    destruct_sort::destruct_bool,
     types::{AnalysysContext, Res},
     z3::{Constraint, Declaration, Literal, Sort, Symbol},
 };
@@ -236,7 +237,13 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
         },
         ExpressionKind::TypeCheckOperation(target_expr, type_name) => {
             let target_res = check_expression(ctx, &target_expr);
+            let (current_val, current_constraint) = destruct_bool(
+                &cur_value,
+                target_expr as &Expression,
+                ctx.declarations.borrow_mut().as_mut(),
+            );
             let mut constraints = target_res.constraints;
+            constraints.push(current_constraint);
             constraints.extend(match type_name.as_str() {
                 "bool" => {
                     let inner_sym = Symbol::new(target_expr as &Expression, "bool");
@@ -245,8 +252,12 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                         .push(Declaration::new(&inner_sym, &Sort::Bool));
                     vec![Constraint::new2(
                         "=",
-                        &target_res.value,
-                        &Constraint::new1("bool", &inner_sym),
+                        &current_val,
+                        &Constraint::new2(
+                            "=",
+                            &target_res.value,
+                            &Constraint::new1("bool", &inner_sym),
+                        ),
                     )]
                 }
                 "int" => {
@@ -256,15 +267,19 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                         .push(Declaration::new(&inner_sym, &Sort::Int));
                     vec![Constraint::new2(
                         "=",
-                        &target_res.value,
-                        &Constraint::new1("int", &inner_sym),
+                        &current_val,
+                        &Constraint::new2(
+                            "=",
+                            &target_res.value,
+                            &Constraint::new1("int", &inner_sym),
+                        ),
                     )]
                 }
                 "float" => {
                     vec![Constraint::new2(
                         "=",
-                        &target_res.value,
-                        &Constraint::mono("float"),
+                        &current_val,
+                        &Constraint::new2("=", &target_res.value, &Constraint::mono("float")),
                     )]
                 }
                 "number" => {
@@ -273,13 +288,17 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                         .borrow_mut()
                         .push(Declaration::new(&inner_int_sym, &Sort::Int));
                     vec![Constraint::new2(
-                        "or",
+                        "=",
+                        &current_val,
                         &Constraint::new2(
-                            "=",
-                            &target_res.value,
-                            &Constraint::new1("int", &inner_int_sym),
+                            "or",
+                            &Constraint::new2(
+                                "=",
+                                &target_res.value,
+                                &Constraint::new1("int", &inner_int_sym),
+                            ),
+                            &Constraint::new2("=", &target_res.value, &Constraint::mono("float")),
                         ),
-                        &Constraint::new2("=", &target_res.value, &Constraint::mono("float")),
                     )]
                 }
                 "string" => {
@@ -293,8 +312,12 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                         .push(Declaration::new(&inner_bytes_sym, &Sort::Int));
                     vec![Constraint::new2(
                         "=",
-                        &target_res.value,
-                        &Constraint::new2("str", &inner_value, &inner_bytes_sym),
+                        &current_val,
+                        &Constraint::new2(
+                            "=",
+                            &target_res.value,
+                            &Constraint::new2("str", &inner_value, &inner_bytes_sym),
+                        ),
                     )]
                 }
                 "list" => {
@@ -309,8 +332,12 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                         .push(Declaration::new(&inner_bytes_sym, &Sort::Int));
                     vec![Constraint::new2(
                         "=",
-                        &target_res.value,
-                        &Constraint::new2("list", &inner_value, &inner_bytes_sym),
+                        &current_val,
+                        &Constraint::new2(
+                            "=",
+                            &target_res.value,
+                            &Constraint::new2("list", &inner_value, &inner_bytes_sym),
+                        ),
                     )]
                 }
                 "map" => {
@@ -320,40 +347,44 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                         .push(Declaration::new(&inner_sym, &Sort::Map));
                     vec![Constraint::new2(
                         "=",
-                        &target_res.value,
+                        &current_val,
                         &Constraint::new2(
-                            "map",
-                            &inner_sym,
-                            &Constraint::new1("list-sum", &inner_sym),
+                            "=",
+                            &target_res.value,
+                            &Constraint::new2(
+                                "map",
+                                &inner_sym,
+                                &Constraint::new1("list-sum", &inner_sym),
+                            ),
                         ),
                     )]
                 }
                 "timestamp" => {
                     vec![Constraint::new2(
                         "=",
-                        &target_res.value,
-                        &Constraint::mono("timestamp"),
+                        &current_val,
+                        &Constraint::new2("=", &target_res.value, &Constraint::mono("timestamp")),
                     )]
                 }
                 "duration" => {
                     vec![Constraint::new2(
                         "=",
-                        &target_res.value,
-                        &Constraint::mono("duration"),
+                        &current_val,
+                        &Constraint::new2("=", &target_res.value, &Constraint::mono("duration")),
                     )]
                 }
                 "path" => {
                     vec![Constraint::new2(
                         "=",
-                        &target_res.value,
-                        &Constraint::mono("path"),
+                        &current_val,
+                        &Constraint::new2("=", &target_res.value, &Constraint::mono("path")),
                     )]
                 }
                 "latlng" => {
                     vec![Constraint::new2(
                         "=",
-                        &target_res.value,
-                        &Constraint::mono("latlng"),
+                        &current_val,
+                        &Constraint::new2("=", &target_res.value, &Constraint::mono("latlng")),
                     )]
                 }
                 _ => vec![],
