@@ -44,21 +44,13 @@ pub struct TypeCheckContext<'a> {
 
 pub type VariableTypeBindings<'a> = HashMap<&'a NodeID, Ty>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Branch {
-    Side(bool),
-    Examination(bool),
-    Through,
-}
-
 fn check_can_be<'a, 'b>(
     from: &'b Ty,
     to: &'b Ty,
     expr: &'a Expression,
     flow: &'a Flow,
-    polluted: &'a RefCell<bool>,
 ) -> (OrAny, Vec<TypeCheckResult>) {
-    let passed: OrAny = from.can_be(to, flow, polluted);
+    let passed: OrAny = from.can_be(to, flow);
     match passed {
         OrAny::Any => (OrAny::Any, vec![]),
         OrAny::Bool(can) => {
@@ -87,11 +79,8 @@ fn check_can_be_candidates<'a, 'b>(
     to_candidates: Vec<Ty>,
     expr: &'a Expression,
     flow: &'a Flow,
-    polluted: &'a RefCell<bool>,
 ) -> (OrAny, Vec<TypeCheckResult>) {
-    let passed: OrAny = OrAny::all(to_candidates.iter(), |to: &Ty| {
-        from.can_be(to, flow, polluted)
-    });
+    let passed: OrAny = OrAny::all(to_candidates.iter(), |to: &Ty| from.can_be(to, flow));
     match passed {
         OrAny::Any => (OrAny::Any, vec![]),
         OrAny::Bool(can) => {
@@ -125,9 +114,6 @@ fn check_function_args<'a>(
     functions: &Vec<&FunctionInterface>,
     args: Vec<Ty>,
     flow: &mut Flow,
-    polluted: &RefCell<bool>,
-    flow_branch_reverse: bool,
-    on_examination: bool,
     function_kind: Option<FunctionKind>,
 ) -> (Ty, Vec<TypeCheckResult>) {
     if let Some((return_ty, return_result)) =
@@ -135,34 +121,18 @@ fn check_function_args<'a>(
             .iter()
             .find_map(|FunctionInterface((params, _), generate_return_type)| {
                 match OrAny::all(zip(&args, params), |(arg, param)| {
-                    arg.kind(flow, polluted).can_be(param, flow, polluted)
+                    arg.kind(flow).can_be(param, flow)
                 }) {
                     OrAny::Any | OrAny::Bool(true) => Some(generate_return_type(
                         expr,
-                        &args.iter().map(|x| x.kind(flow, polluted)).collect(),
+                        &args.iter().map(|x| x.kind(flow)).collect(),
                         flow,
-                        polluted,
                     )),
                     OrAny::Bool(false) => None,
                 }
             })
     {
-        if !on_examination && function_kind != Some(FunctionKind::UnaryOp(UnaryLiteral::Not)) {
-            if let TypeKind::Boolean(MayLiteral::Literal(bool_literal)) =
-                return_ty.kind(flow, polluted)
-            {
-                (
-                    Ty::new(TypeKind::Boolean(MayLiteral::Literal(
-                        bool_literal ^ flow_branch_reverse,
-                    ))),
-                    return_result,
-                )
-            } else {
-                (return_ty.clone(), return_result)
-            }
-        } else {
-            (return_ty.clone(), return_result)
-        }
+        (return_ty.clone(), return_result)
     } else {
         (
             Ty::new(TypeKind::Any),
@@ -195,124 +165,8 @@ fn check_interface_function_calling<'a>(
     function_kind: FunctionKind,
     args: Vec<Ty>,
     flow: &mut Flow,
-    flow_branch_reverse: bool,
-    polluted: &RefCell<bool>,
-    on_examination: &bool,
-    on_poisoning: bool,
 ) -> (Ty, Vec<TypeCheckResult>) {
-    // TODO: support `(data.foo == data.bar) && data.foo is string` => data.bar is string
-    if !on_examination
-        && (!flow_branch_reverse && function_kind == FunctionKind::BinaryOp(BinaryLiteral::Eq)
-            || (flow_branch_reverse
-                && function_kind == FunctionKind::BinaryOp(BinaryLiteral::NotEq)))
-    {
-        let left_ty = &interface_ty;
-        let right_ty = &args[0];
-        if let Ty::FlowType(_, poison) = left_ty {
-            if *poison {
-                *polluted.borrow_mut() = true;
-            }
-        }
-        if let Ty::FlowType(_, poison) = right_ty {
-            if *poison {
-                *polluted.borrow_mut() = true;
-            }
-        }
-        let left_kind = left_ty.kind(flow, polluted);
-        let right_kind = right_ty.kind(flow, polluted);
-        match (left_kind, right_kind) {
-            (TypeKind::Any, TypeKind::Any) => {}
-            (TypeKind::Any, _) => {
-                if let Ty::FlowType(left_flow_ty_id, _) = left_ty {
-                    *flow
-                        .get_mut(&left_flow_ty_id)
-                        .unwrap()
-                        .get_type_mut()
-                        .unwrap() = right_kind.clone();
-                }
-            }
-            (_, TypeKind::Any) => {
-                if let Ty::FlowType(right_flow_ty_id, _) = right_ty {
-                    *flow
-                        .get_mut(&right_flow_ty_id)
-                        .unwrap()
-                        .get_type_mut()
-                        .unwrap() = left_kind.clone();
-                }
-            }
-            (_, _) => {
-                if let OrAny::Bool(true) = left_ty.can_be(right_ty, flow, polluted) {
-                    if let Ty::FlowType(right_flow_ty_id, _) = right_ty {
-                        *flow
-                            .get_mut(&right_flow_ty_id)
-                            .unwrap()
-                            .get_type_mut()
-                            .unwrap() = left_kind.clone();
-                    }
-                } else if let OrAny::Bool(true) = right_ty.can_be(left_ty, flow, polluted) {
-                    if let Ty::FlowType(left_flow_ty_id, _) = left_ty {
-                        *flow
-                            .get_mut(&left_flow_ty_id)
-                            .unwrap()
-                            .get_type_mut()
-                            .unwrap() = right_kind.clone();
-                    }
-                }
-            }
-        }
-    }
-    if !on_examination
-        && flow_branch_reverse == false
-        && function_kind == FunctionKind::BinaryOp(BinaryLiteral::In)
-    {
-        if let Ty::FlowType(flow_type_id, poison) = &interface_ty {
-            if *poison {
-                *polluted.borrow_mut() = true;
-            }
-            if let Some(flow_interface_ty) = flow.get(&flow_type_id) {
-                if let Ty::Type(_, TypeKind::String(MayLiteral::Literal(key))) = &args[0] {
-                    if let TypeKind::Map(MayLiteral::Literal(map_literal)) =
-                        flow_interface_ty.kind(flow, polluted)
-                    {
-                        let mut map_literal = map_literal.clone();
-                        let new_ty_id = TypeID::new();
-                        flow.insert(
-                            new_ty_id.clone(),
-                            Ty::Type(new_ty_id.clone(), TypeKind::Any),
-                        );
-                        map_literal
-                            .literals
-                            .insert(key.clone(), Ty::FlowType(new_ty_id.clone(), on_poisoning));
-                        *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
-                            TypeKind::Map(MayLiteral::Literal(map_literal));
-                    } else if let TypeKind::Map(MayLiteral::Unknown) =
-                        flow_interface_ty.kind(flow, polluted)
-                    {
-                        let new_default_ty_id = TypeID::new();
-                        flow.insert(
-                            new_default_ty_id.clone(),
-                            Ty::Type(new_default_ty_id.clone(), TypeKind::Unknown),
-                        );
-                        let mut map_literal = MapLiteral {
-                            literals: HashMap::new(),
-                            default: Some(Box::new(Ty::FlowType(new_default_ty_id, on_poisoning))),
-                        };
-                        let new_ty_id = TypeID::new();
-                        flow.insert(
-                            new_ty_id.clone(),
-                            Ty::Type(new_ty_id.clone(), TypeKind::Any),
-                        );
-                        map_literal
-                            .literals
-                            .insert(key.clone(), Ty::FlowType(new_ty_id.clone(), on_poisoning));
-                        *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
-                            TypeKind::Map(MayLiteral::Literal(map_literal));
-                    }
-                }
-            }
-        }
-    }
-    if interface_ty.kind(flow, polluted).is_any() {
+    if interface_ty.kind(flow).is_any() {
         if function_kind == FunctionKind::BinaryOp(BinaryLiteral::Eq) {
             return (Ty::new(TypeKind::Boolean(MayLiteral::Unknown)), vec![]);
         }
@@ -324,8 +178,8 @@ fn check_interface_function_calling<'a>(
     if function_kind == FunctionKind::BinaryOp(BinaryLiteral::Eq)
         || function_kind == FunctionKind::BinaryOp(BinaryLiteral::NotEq)
     {
-        if interface_ty.kind(flow, polluted).is_null() {
-            if args[0].kind(flow, polluted).is_null() {
+        if interface_ty.kind(flow).is_null() {
+            if args[0].kind(flow).is_null() {
                 return (
                     Ty::new(TypeKind::Boolean(MayLiteral::Literal(true))),
                     vec![],
@@ -338,7 +192,7 @@ fn check_interface_function_calling<'a>(
             }
         }
     }
-    let interface_ty = interface_ty.kind(flow, polluted).clone();
+    let interface_ty = interface_ty.kind(flow).clone();
     let coercions = interface_ty.get_coercion_list();
     // check is interface function
     let interfaces = interface_ty.get_interface(&coercions);
@@ -366,9 +220,6 @@ fn check_interface_function_calling<'a>(
             &functions,
             args,
             flow,
-            polluted,
-            flow_branch_reverse,
-            *on_examination,
             Some(function_kind),
         )
     }
@@ -381,12 +232,6 @@ fn check_function<'a, 'b, 'c>(
     context: &'a TypeCheckContext<'a>,
     variable_type_bindings: &'c VariableTypeBindings,
     flow: &'c mut Flow,
-    flow_branch: &'c mut Vec<Branch>,
-    flow_branch_depth: &'b mut usize,
-    flow_branch_reverse: bool,
-    polluted: &'c RefCell<bool>,
-    on_examination: &'b mut bool,
-    on_poisoning: bool,
     request_resource_data_ty_id: &TypeID,
 ) -> (Ty, Vec<TypeCheckResult>) {
     let mut res: Vec<TypeCheckResult> = vec![];
@@ -415,12 +260,6 @@ fn check_function<'a, 'b, 'c>(
             context,
             &variable_type_bindings,
             flow,
-            flow_branch,
-            flow_branch_depth,
-            flow_branch_reverse,
-            polluted,
-            on_examination,
-            on_poisoning,
             request_resource_data_ty_id,
         );
         variable_type_bindings.insert(&let_binding.id, let_ty.clone());
@@ -433,12 +272,6 @@ fn check_function<'a, 'b, 'c>(
         context,
         &variable_type_bindings,
         flow,
-        flow_branch,
-        flow_branch_depth,
-        flow_branch_reverse,
-        polluted,
-        on_examination,
-        on_poisoning,
         request_resource_data_ty_id,
     );
     res.extend(return_res);
@@ -446,76 +279,11 @@ fn check_function<'a, 'b, 'c>(
     (return_ty, res)
 }
 
-fn calc_ty_max_size(ty: &TypeKind, flow: &Flow) -> usize {
-    let _polluted = RefCell::new(false);
-    // may be field has 2 bytes
-    2 + match ty {
-        TypeKind::Any
-        | TypeKind::Unknown
-        | TypeKind::Bytes(MayLiteral::Unknown)
-        | TypeKind::Float(MayLiteral::Unknown)
-        | TypeKind::Integer(MayLiteral::Unknown)
-        | TypeKind::List(MayLiteral::Unknown)
-        | TypeKind::List(MayLiteral::Literal(ListLiteral::Single(_)))
-        | TypeKind::Map(MayLiteral::Unknown)
-        | TypeKind::Map(MayLiteral::Literal(MapLiteral {
-            literals: _,
-            default: Some(_),
-        }))
-        | TypeKind::Path(MayLiteral::Unknown)
-        | TypeKind::PathTemplateBound(MayLiteral::Unknown)
-        | TypeKind::String(MayLiteral::Unknown) => usize::MAX,
-        TypeKind::Null => 1,
-        TypeKind::Boolean(_) => 1,
-        TypeKind::Bytes(MayLiteral::Literal(bytes)) => bytes.len(),
-        TypeKind::Duration => panic!(),
-        TypeKind::Float(MayLiteral::Literal(_)) => 8,
-        TypeKind::Integer(MayLiteral::Literal(_)) => 8,
-        TypeKind::LatLng => 16,
-        TypeKind::List(MayLiteral::Literal(ListLiteral::Tuple(tuple))) => tuple
-            .iter()
-            .map(|ty| calc_ty_max_size(ty.kind(flow, &_polluted), flow))
-            .sum(),
-        TypeKind::Map(MayLiteral::Literal(MapLiteral {
-            literals,
-            default: None,
-        })) => literals
-            .iter()
-            .map(|(key, ty)| key.len() + calc_ty_max_size(ty.kind(flow, &_polluted), flow))
-            .sum(),
-        TypeKind::MapDiff(_) => panic!(),
-        TypeKind::Path(MayLiteral::Literal(path)) => path.len(),
-        TypeKind::PathTemplateUnBound(_) => panic!(),
-        TypeKind::PathTemplateBound(MayLiteral::Literal(path)) => {
-            path.len() - 1 + path.iter().map(|field| field.len()).sum::<usize>()
-        }
-        TypeKind::Set(_) => panic!(),
-        TypeKind::String(MayLiteral::Literal(string)) => string.len(),
-        TypeKind::Timestamp => 8,
-    }
-}
-
-fn calc_max_size(request_resource_data_ty_id: &TypeID, flow: &Flow) -> usize {
-    let _polluted = RefCell::new(false);
-    let data_ty = flow
-        .get(request_resource_data_ty_id)
-        .unwrap()
-        .kind(flow, &_polluted);
-
-    return calc_ty_max_size(&data_ty, flow);
-}
-
 fn check_expression<'a, 'b>(
     expr: &'a Expression,
     context: &'a TypeCheckContext<'a>,
     variable_type_bindings: &'b VariableTypeBindings,
     flow: &'b mut Flow,
-    flow_branch: &'b mut Vec<Branch>,
-    flow_branch_depth: &'b mut usize,
-    flow_branch_reverse: bool,
-    polluted: &RefCell<bool>,
-    on_examination: &'b mut bool,
-    on_poisoning: bool,
     request_resource_data_ty_id: &TypeID,
 ) -> (Ty, Vec<TypeCheckResult>) {
     let (ty, err) = check_expression_inner(
@@ -523,18 +291,11 @@ fn check_expression<'a, 'b>(
         context,
         variable_type_bindings,
         flow,
-        flow_branch,
-        flow_branch_depth,
-        flow_branch_reverse,
-        polluted,
-        on_examination,
-        on_poisoning,
         request_resource_data_ty_id,
     );
     debug!(
-        "{:?} ({}) {:?}",
+        "{:?} {:?}",
         ty.expand_for_debug(flow),
-        flow_branch_reverse,
         (Report::from(TypeCheckResult {
             reason: "Expression".to_owned(),
             at: expr.get_span().into()
@@ -549,21 +310,12 @@ fn check_expression_inner<'a, 'b>(
     context: &'a TypeCheckContext<'a>,
     variable_type_bindings: &'b VariableTypeBindings,
     flow: &'b mut Flow,
-    flow_branch: &'b mut Vec<Branch>,
-    flow_branch_depth: &'b mut usize,
-    flow_branch_reverse: bool,
-    polluted: &RefCell<bool>,
-    on_examination: &'b mut bool,
-    on_poisoning: bool,
     request_resource_data_ty_id: &TypeID,
 ) -> (Ty, Vec<TypeCheckResult>) {
     match &expr.kind {
-        ExpressionKind::Literal(Literal::Bool(b)) => (
-            Ty::new(TypeKind::Boolean(MayLiteral::Literal(
-                *b ^ flow_branch_reverse,
-            ))),
-            vec![],
-        ),
+        ExpressionKind::Literal(Literal::Bool(b)) => {
+            (Ty::new(TypeKind::Boolean(MayLiteral::Literal(*b))), vec![])
+        }
         ExpressionKind::Literal(Literal::Float(f)) => {
             (Ty::new(TypeKind::Float(MayLiteral::Literal(*f))), vec![])
         }
@@ -586,12 +338,6 @@ fn check_expression_inner<'a, 'b>(
                                 context,
                                 variable_type_bindings,
                                 flow,
-                                flow_branch,
-                                flow_branch_depth,
-                                flow_branch_reverse,
-                                polluted,
-                                on_examination,
-                                on_poisoning,
                                 request_resource_data_ty_id,
                             );
                             result.extend(item_res);
@@ -613,12 +359,6 @@ fn check_expression_inner<'a, 'b>(
                             context,
                             variable_type_bindings,
                             flow,
-                            flow_branch,
-                            flow_branch_depth,
-                            flow_branch_reverse,
-                            polluted,
-                            on_examination,
-                            on_poisoning,
                             request_resource_data_ty_id,
                         ),
                     )
@@ -649,12 +389,6 @@ fn check_expression_inner<'a, 'b>(
                             context,
                             variable_type_bindings,
                             flow,
-                            flow_branch,
-                            flow_branch_depth,
-                            flow_branch_reverse,
-                            polluted,
-                            on_examination,
-                            on_poisoning,
                             request_resource_data_ty_id,
                         );
                         let (_, check_result) = check_can_be(
@@ -662,13 +396,11 @@ fn check_expression_inner<'a, 'b>(
                             &Ty::new(TypeKind::String(MayLiteral::Unknown)),
                             &arg_expr,
                             flow,
-                            polluted,
                         );
                         result.extend(arg_result);
                         result.extend(check_result);
 
-                        if let TypeKind::String(MayLiteral::Literal(arg_str)) =
-                            arg_type.kind(flow, polluted)
+                        if let TypeKind::String(MayLiteral::Literal(arg_str)) = arg_type.kind(flow)
                         {
                             match acc {
                                 Ok(MayLiteral::Unknown) => Ok(MayLiteral::Unknown),
@@ -738,16 +470,6 @@ fn check_expression_inner<'a, 'b>(
                 context,
                 variable_type_bindings,
                 flow,
-                flow_branch,
-                flow_branch_depth,
-                if *literal == UnaryLiteral::Not {
-                    !flow_branch_reverse
-                } else {
-                    flow_branch_reverse
-                },
-                polluted,
-                on_examination,
-                on_poisoning,
                 request_resource_data_ty_id,
             );
             let (return_ty, return_res) = check_interface_function_calling(
@@ -757,312 +479,33 @@ fn check_expression_inner<'a, 'b>(
                 FunctionKind::UnaryOp(*literal),
                 vec![],
                 flow,
-                flow_branch_reverse,
-                polluted,
-                &on_examination,
-                on_poisoning,
             );
             (return_ty, [op_res, return_res].concat())
         }
         ExpressionKind::BinaryOperation(literal, left_expr, right_expr) => {
-            if !*on_examination
-                && ((*literal == BinaryLiteral::Or && !flow_branch_reverse)
-                    || (*literal == BinaryLiteral::And && flow_branch_reverse))
-            {
-                let _flow_branch_depth = *flow_branch_depth;
-                *flow_branch_depth += 1;
-                match flow_branch.get(_flow_branch_depth) {
-                    Some(Branch::Through) => {
-                        let mut left_flow = &mut flow.clone();
-                        let mut right_flow = flow;
-                        let (_left_ty, _left_res) = check_expression(
-                            &left_expr,
-                            context,
-                            variable_type_bindings,
-                            &mut left_flow,
-                            flow_branch,
-                            flow_branch_depth,
-                            flow_branch_reverse,
-                            polluted,
-                            on_examination,
-                            on_poisoning,
-                            request_resource_data_ty_id,
-                        );
-                        let (left_ty, left_res) = check_expression(
-                            &left_expr,
-                            context,
-                            variable_type_bindings,
-                            &mut right_flow,
-                            flow_branch,
-                            flow_branch_depth,
-                            !flow_branch_reverse,
-                            polluted,
-                            on_examination,
-                            on_poisoning,
-                            request_resource_data_ty_id,
-                        );
-                        let (right_ty, right_res) = check_expression(
-                            &right_expr,
-                            context,
-                            variable_type_bindings,
-                            &mut right_flow,
-                            flow_branch,
-                            flow_branch_depth,
-                            flow_branch_reverse,
-                            polluted,
-                            on_examination,
-                            on_poisoning,
-                            request_resource_data_ty_id,
-                        );
-                        let left_max_size = calc_max_size(request_resource_data_ty_id, left_flow);
-                        let right_max_size = calc_max_size(request_resource_data_ty_id, right_flow);
-                        let mut flow = if left_max_size < right_max_size {
-                            right_flow
-                        } else {
-                            &mut left_flow
-                        };
-                        let (return_ty, return_res) = check_interface_function_calling(
-                            expr,
-                            context,
-                            left_ty,
-                            FunctionKind::BinaryOp(
-                                if flow_branch_reverse && *literal == BinaryLiteral::Or {
-                                    BinaryLiteral::And
-                                } else {
-                                    *literal
-                                },
-                            ),
-                            vec![right_ty],
-                            &mut flow,
-                            flow_branch_reverse,
-                            polluted,
-                            &on_examination,
-                            on_poisoning,
-                        );
-                        (return_ty, [left_res, right_res, return_res].concat())
-                    }
-                    Some(Branch::Side(side)) => {
-                        if !side {
-                            let (left_ty, left_res) = check_expression(
-                                &left_expr,
-                                context,
-                                variable_type_bindings,
-                                flow,
-                                flow_branch,
-                                flow_branch_depth,
-                                flow_branch_reverse,
-                                polluted,
-                                on_examination,
-                                on_poisoning,
-                                request_resource_data_ty_id,
-                            );
-                            check_can_be(
-                                &left_ty,
-                                &Ty::new(TypeKind::Boolean(MayLiteral::Unknown)),
-                                &left_expr,
-                                flow,
-                                polluted,
-                            );
-                            // TODO: care always true/false
-                            (Ty::new(TypeKind::Boolean(MayLiteral::Unknown)), left_res)
-                        } else {
-                            let (left_ty, left_res) = check_expression(
-                                &left_expr,
-                                context,
-                                variable_type_bindings,
-                                flow,
-                                flow_branch,
-                                flow_branch_depth,
-                                !flow_branch_reverse,
-                                polluted,
-                                on_examination,
-                                on_poisoning,
-                                request_resource_data_ty_id,
-                            );
-                            let (right_ty, right_res) = check_expression(
-                                &right_expr,
-                                context,
-                                variable_type_bindings,
-                                flow,
-                                flow_branch,
-                                flow_branch_depth,
-                                flow_branch_reverse,
-                                polluted,
-                                on_examination,
-                                on_poisoning,
-                                request_resource_data_ty_id,
-                            );
-                            let (return_ty, return_res) = check_interface_function_calling(
-                                expr,
-                                context,
-                                left_ty,
-                                FunctionKind::BinaryOp(
-                                    if flow_branch_reverse && *literal == BinaryLiteral::And {
-                                        BinaryLiteral::Or
-                                    } else {
-                                        *literal
-                                    },
-                                ),
-                                vec![right_ty],
-                                flow,
-                                flow_branch_reverse,
-                                polluted,
-                                &on_examination,
-                                on_poisoning,
-                            );
-                            (return_ty, [left_res, right_res, return_res].concat())
-                        }
-                    }
-                    Some(Branch::Examination(false)) => {
-                        let _polluted = RefCell::new(false);
-                        let (left_ty, left_res) = check_expression(
-                            &left_expr,
-                            context,
-                            variable_type_bindings,
-                            flow,
-                            flow_branch,
-                            flow_branch_depth,
-                            flow_branch_reverse,
-                            &_polluted,
-                            on_examination,
-                            true,
-                            request_resource_data_ty_id,
-                        );
-                        *on_examination = true;
-                        check_can_be(
-                            &left_ty,
-                            &Ty::new(TypeKind::Boolean(MayLiteral::Unknown)),
-                            &left_expr,
-                            flow,
-                            polluted,
-                        );
-                        // TODO: care always true/false
-                        (Ty::new(TypeKind::Boolean(MayLiteral::Unknown)), left_res)
-                    }
-                    Some(Branch::Examination(true)) => {
-                        let _polluted = RefCell::new(false);
-                        let (left_ty, left_res) = check_expression(
-                            &left_expr,
-                            context,
-                            variable_type_bindings,
-                            flow,
-                            flow_branch,
-                            flow_branch_depth,
-                            !flow_branch_reverse,
-                            &_polluted,
-                            on_examination,
-                            true,
-                            request_resource_data_ty_id,
-                        );
-                        let (right_ty, right_res) = check_expression(
-                            &right_expr,
-                            context,
-                            variable_type_bindings,
-                            flow,
-                            flow_branch,
-                            flow_branch_depth,
-                            flow_branch_reverse,
-                            &_polluted,
-                            on_examination,
-                            true,
-                            request_resource_data_ty_id,
-                        );
-                        *on_examination = true;
-                        let (return_ty, return_res) = check_interface_function_calling(
-                            expr,
-                            context,
-                            left_ty,
-                            FunctionKind::BinaryOp(
-                                if flow_branch_reverse && *literal == BinaryLiteral::Or {
-                                    BinaryLiteral::And
-                                } else {
-                                    *literal
-                                },
-                            ),
-                            vec![right_ty],
-                            flow,
-                            flow_branch_reverse,
-                            polluted,
-                            &on_examination,
-                            on_poisoning,
-                        );
-                        (return_ty, [left_res, right_res, return_res].concat())
-                    }
-                    None => {
-                        let _polluted = RefCell::new(false);
-                        flow_branch.push(Branch::Examination(false));
-                        let (left_ty, left_res) = check_expression(
-                            &left_expr,
-                            context,
-                            variable_type_bindings,
-                            flow,
-                            flow_branch,
-                            flow_branch_depth,
-                            flow_branch_reverse,
-                            &_polluted,
-                            on_examination,
-                            true,
-                            request_resource_data_ty_id,
-                        );
-                        *on_examination = true;
-                        check_can_be(
-                            &left_ty,
-                            &Ty::new(TypeKind::Boolean(MayLiteral::Unknown)),
-                            &left_expr,
-                            flow,
-                            polluted,
-                        );
-                        // TODO: care always true/false
-                        (Ty::new(TypeKind::Boolean(MayLiteral::Unknown)), left_res)
-                    }
-                }
-            } else {
-                let (left_ty, left_res) = check_expression(
-                    &left_expr,
-                    context,
-                    variable_type_bindings,
-                    flow,
-                    flow_branch,
-                    flow_branch_depth,
-                    flow_branch_reverse,
-                    polluted,
-                    on_examination,
-                    on_poisoning,
-                    request_resource_data_ty_id,
-                );
-                let (right_ty, right_res) = check_expression(
-                    &right_expr,
-                    context,
-                    variable_type_bindings,
-                    flow,
-                    flow_branch,
-                    flow_branch_depth,
-                    flow_branch_reverse,
-                    polluted,
-                    on_examination,
-                    on_poisoning,
-                    request_resource_data_ty_id,
-                );
-                let (return_ty, return_res) = check_interface_function_calling(
-                    expr,
-                    context,
-                    left_ty,
-                    FunctionKind::BinaryOp(
-                        if flow_branch_reverse && *literal == BinaryLiteral::Or {
-                            BinaryLiteral::And
-                        } else {
-                            *literal
-                        },
-                    ),
-                    vec![right_ty],
-                    flow,
-                    flow_branch_reverse,
-                    polluted,
-                    &on_examination,
-                    on_poisoning,
-                );
-                (return_ty, [left_res, right_res, return_res].concat())
-            }
+            let (left_ty, left_res) = check_expression(
+                &left_expr,
+                context,
+                variable_type_bindings,
+                flow,
+                request_resource_data_ty_id,
+            );
+            let (right_ty, right_res) = check_expression(
+                &right_expr,
+                context,
+                variable_type_bindings,
+                flow,
+                request_resource_data_ty_id,
+            );
+            let (return_ty, return_res) = check_interface_function_calling(
+                expr,
+                context,
+                left_ty,
+                FunctionKind::BinaryOp(*literal),
+                vec![right_ty],
+                flow,
+            );
+            (return_ty, [left_res, right_res, return_res].concat())
         }
         ExpressionKind::TernaryOperation(cond_expr, true_expr, false_expr) => {
             let (cond_ty, mut cond_res) = check_expression(
@@ -1070,12 +513,6 @@ fn check_expression_inner<'a, 'b>(
                 context,
                 variable_type_bindings,
                 flow,
-                flow_branch,
-                flow_branch_depth,
-                flow_branch_reverse,
-                polluted,
-                on_examination,
-                on_poisoning,
                 request_resource_data_ty_id,
             );
             let (_, res_assert) = check_can_be(
@@ -1083,7 +520,6 @@ fn check_expression_inner<'a, 'b>(
                 &Ty::new(TypeKind::Boolean(MayLiteral::Unknown)),
                 &cond_expr,
                 flow,
-                polluted,
             );
             cond_res.extend(res_assert);
             let (true_ty, true_res) = check_expression(
@@ -1091,12 +527,6 @@ fn check_expression_inner<'a, 'b>(
                 context,
                 variable_type_bindings,
                 flow,
-                flow_branch,
-                flow_branch_depth,
-                flow_branch_reverse,
-                polluted,
-                on_examination,
-                on_poisoning,
                 request_resource_data_ty_id,
             );
             let (false_ty, false_res) = check_expression(
@@ -1104,15 +534,9 @@ fn check_expression_inner<'a, 'b>(
                 context,
                 variable_type_bindings,
                 flow,
-                flow_branch,
-                flow_branch_depth,
-                flow_branch_reverse,
-                polluted,
-                on_examination,
-                on_poisoning,
                 request_resource_data_ty_id,
             );
-            let result_ty = Ty::max(&true_ty, &false_ty, flow, polluted);
+            let result_ty = Ty::max(&true_ty, &false_ty, flow);
             (result_ty, [cond_res, true_res, false_res].concat())
         }
         ExpressionKind::TypeCheckOperation(target_expr, type_str) => {
@@ -1138,84 +562,10 @@ fn check_expression_inner<'a, 'b>(
                 context,
                 variable_type_bindings,
                 flow,
-                flow_branch,
-                flow_branch_depth,
-                flow_branch_reverse,
-                polluted,
-                on_examination,
-                on_poisoning,
                 request_resource_data_ty_id,
             );
             let (bool_ty, res_2) =
-                check_can_be_candidates(&target_ty, type_str_ty_candidates, expr, flow, polluted);
-
-            if !*on_examination && flow_branch_reverse == false {
-                if let Ty::FlowType(flow_type_id, poison) = &target_ty {
-                    if let TypeKind::Any = target_ty.kind(flow, polluted) {
-                        if *poison {
-                            *polluted.borrow_mut() = true;
-                        }
-                        match &**type_str {
-                            "bool" => {
-                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
-                                    TypeKind::Boolean(MayLiteral::Unknown)
-                            }
-                            "int" => {
-                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
-                                    TypeKind::Integer(MayLiteral::Unknown)
-                            }
-                            "float" => {
-                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
-                                    TypeKind::Float(MayLiteral::Unknown)
-                            }
-                            "number" => {
-                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
-                                    TypeKind::Integer(MayLiteral::Unknown)
-                            }
-                            "string" => {
-                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
-                                    TypeKind::String(MayLiteral::Unknown)
-                            }
-                            "list" => {
-                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
-                                    TypeKind::List(MayLiteral::Unknown)
-                            }
-                            "map" => {
-                                let new_default_ty_id = TypeID::new();
-                                flow.insert(
-                                    new_default_ty_id.clone(),
-                                    Ty::Type(new_default_ty_id.clone(), TypeKind::Unknown),
-                                );
-                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
-                                    TypeKind::Map(MayLiteral::Literal(MapLiteral {
-                                        literals: HashMap::new(),
-                                        default: Some(Box::new(Ty::FlowType(
-                                            new_default_ty_id,
-                                            on_poisoning,
-                                        ))),
-                                    }))
-                            }
-                            "timestamp" => {
-                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
-                                    TypeKind::Timestamp
-                            }
-                            "duration" => {
-                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
-                                    TypeKind::Duration
-                            }
-                            "path" => {
-                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
-                                    TypeKind::Path(MayLiteral::Unknown)
-                            }
-                            "latlng" => {
-                                *flow.get_mut(&flow_type_id).unwrap().get_type_mut().unwrap() =
-                                    TypeKind::LatLng
-                            }
-                            _ => {}
-                        };
-                    }
-                }
-            }
+                check_can_be_candidates(&target_ty, type_str_ty_candidates, expr, flow);
 
             (
                 Ty::new(TypeKind::make_bool_ty(bool_ty)),
@@ -1230,12 +580,6 @@ fn check_expression_inner<'a, 'b>(
                     context,
                     variable_type_bindings,
                     flow,
-                    flow_branch,
-                    flow_branch_depth,
-                    flow_branch_reverse,
-                    polluted,
-                    on_examination,
-                    on_poisoning,
                     request_resource_data_ty_id,
                 );
             }
@@ -1245,29 +589,17 @@ fn check_expression_inner<'a, 'b>(
                 context,
                 variable_type_bindings,
                 flow,
-                flow_branch,
-                flow_branch_depth,
-                flow_branch_reverse,
-                polluted,
-                on_examination,
-                on_poisoning,
                 request_resource_data_ty_id,
             );
-            if obj_ty.kind(flow, polluted).is_any() {
+            if obj_ty.kind(flow).is_any() {
                 return (Ty::new(TypeKind::Any), res);
             }
             match &member_expr.kind {
                 ExpressionKind::Variable(variable_name) => {
-                    if *on_examination {
-                        if let Ty::FlowType(_, _) = obj_ty {
-                            return (Ty::new(TypeKind::Any), vec![]);
-                        }
-                    }
-
-                    let coercions = obj_ty.kind(flow, polluted).get_coercion_list();
+                    let coercions = obj_ty.kind(flow).get_coercion_list();
                     // check is interface function
                     let member = {
-                        let interfaces = obj_ty.kind(flow, polluted).get_interface(&coercions);
+                        let interfaces = obj_ty.kind(flow).get_interface(&coercions);
                         interfaces.iter().find_map(|interface| {
                             interface
                                 .members
@@ -1286,84 +618,11 @@ fn check_expression_inner<'a, 'b>(
                     };
 
                     if let Some(member) = member {
-                        if let TypeKind::Unknown = member.kind(flow, polluted) {
-                            if let Ty::FlowType(flow_obj_ty_id, poison) = &obj_ty {
-                                if flow_branch_reverse == false {
-                                    if *poison {
-                                        *polluted.borrow_mut() = true;
-                                    }
-                                    if let Some(flow_obj_ty) = flow.get(&flow_obj_ty_id) {
-                                        if let TypeKind::Map(MayLiteral::Literal(map_literal)) =
-                                            flow_obj_ty.kind(flow, polluted)
-                                        {
-                                            let mut map_literal = map_literal.clone();
-                                            let new_ty_id = TypeID::new();
-                                            flow.insert(
-                                                new_ty_id.clone(),
-                                                Ty::Type(new_ty_id.clone(), TypeKind::Any),
-                                            );
-                                            map_literal.literals.insert(
-                                                variable_name.clone(),
-                                                Ty::FlowType(new_ty_id.clone(), on_poisoning),
-                                            );
-                                            *flow
-                                                .get_mut(&flow_obj_ty_id)
-                                                .unwrap()
-                                                .get_type_mut()
-                                                .unwrap() =
-                                                TypeKind::Map(MayLiteral::Literal(map_literal));
-
-                                            return (Ty::FlowType(new_ty_id, on_poisoning), vec![]);
-                                        } else if let TypeKind::Map(MayLiteral::Unknown) =
-                                            flow_obj_ty.kind(flow, polluted)
-                                        {
-                                            let new_default_ty_id = TypeID::new();
-                                            flow.insert(
-                                                new_default_ty_id.clone(),
-                                                Ty::Type(
-                                                    new_default_ty_id.clone(),
-                                                    TypeKind::Unknown,
-                                                ),
-                                            );
-                                            let mut map_literal = MapLiteral {
-                                                literals: HashMap::new(),
-                                                default: Some(Box::new(Ty::FlowType(
-                                                    new_default_ty_id,
-                                                    on_poisoning,
-                                                ))),
-                                            };
-                                            let new_ty_id = TypeID::new();
-                                            flow.insert(
-                                                new_ty_id.clone(),
-                                                Ty::Type(new_ty_id.clone(), TypeKind::Any),
-                                            );
-                                            map_literal.literals.insert(
-                                                variable_name.clone(),
-                                                Ty::FlowType(new_ty_id.clone(), on_poisoning),
-                                            );
-                                            *flow
-                                                .get_mut(&flow_obj_ty_id)
-                                                .unwrap()
-                                                .get_type_mut()
-                                                .unwrap() =
-                                                TypeKind::Map(MayLiteral::Literal(map_literal));
-
-                                            return (Ty::FlowType(new_ty_id, on_poisoning), vec![]);
-                                        }
-                                    }
-                                } else {
-                                    return (Ty::new(TypeKind::Any), res);
-                                }
-                            }
-                        }
-
                         if let TypeKind::Boolean(MayLiteral::Literal(bool_literal)) =
-                            member.kind(flow, polluted)
+                            member.kind(flow)
                         {
                             return (
-                                Ty::new(TypeKind::Boolean(MayLiteral::Literal(
-                                    bool_literal ^ flow_branch_reverse,
-                                ))),
+                                Ty::new(TypeKind::Boolean(MayLiteral::Literal(*bool_literal))),
                                 res,
                             );
                         } else {
@@ -1391,7 +650,7 @@ got: `.{}`",
                     return (Ty::new(TypeKind::Any), res);
                 }
                 ExpressionKind::FunctionCallExpression(fn_name, fn_params_expr) => {
-                    let obj_ty = obj_ty.kind(flow, polluted).clone();
+                    let obj_ty = obj_ty.kind(flow).clone();
                     let obj_coercions = obj_ty.get_coercion_list();
                     // check is interface function
                     let obj_interfaces = obj_ty.get_interface(&obj_coercions);
@@ -1424,12 +683,6 @@ got: `.{}`",
                                 context,
                                 variable_type_bindings,
                                 flow,
-                                flow_branch,
-                                flow_branch_depth,
-                                flow_branch_reverse,
-                                polluted,
-                                on_examination,
-                                on_poisoning,
                                 request_resource_data_ty_id,
                             )
                         })
@@ -1447,9 +700,6 @@ got: `.{}`",
                         &function_candidates,
                         params_ty,
                         flow,
-                        polluted,
-                        flow_branch_reverse,
-                        *on_examination,
                         None,
                     );
                     return (return_ty, [res, params_res, return_res].concat());
@@ -1469,12 +719,6 @@ got: `.{}`",
                 context,
                 variable_type_bindings,
                 flow,
-                flow_branch,
-                flow_branch_depth,
-                flow_branch_reverse,
-                polluted,
-                on_examination,
-                on_poisoning,
                 request_resource_data_ty_id,
             );
             let (subscript_ty, subscript_res) = check_expression(
@@ -1482,12 +726,6 @@ got: `.{}`",
                 context,
                 variable_type_bindings,
                 flow,
-                flow_branch,
-                flow_branch_depth,
-                flow_branch_reverse,
-                polluted,
-                on_examination,
-                on_poisoning,
                 request_resource_data_ty_id,
             );
             let (return_ty, return_res) = check_interface_function_calling(
@@ -1497,10 +735,6 @@ got: `.{}`",
                 FunctionKind::Subscript,
                 vec![subscript_ty],
                 flow,
-                flow_branch_reverse,
-                polluted,
-                &on_examination,
-                on_poisoning,
             );
             (return_ty, [obj_res, subscript_res, return_res].concat())
         }
@@ -1515,12 +749,6 @@ got: `.{}`",
                             context,
                             variable_type_bindings,
                             flow,
-                            flow_branch,
-                            flow_branch_depth,
-                            flow_branch_reverse,
-                            polluted,
-                            on_examination,
-                            on_poisoning,
                             request_resource_data_ty_id,
                         ),
                     )
@@ -1547,12 +775,6 @@ got: `.{}`",
                         context,
                         variable_type_bindings,
                         flow,
-                        flow_branch,
-                        flow_branch_depth,
-                        flow_branch_reverse,
-                        polluted,
-                        on_examination,
-                        on_poisoning,
                         request_resource_data_ty_id,
                     );
                     (return_ty, [params_res, return_res].concat())
@@ -1565,9 +787,6 @@ got: `.{}`",
                         &function_ty_candidates.iter().collect(),
                         params_ty,
                         flow,
-                        polluted,
-                        flow_branch_reverse,
-                        *on_examination,
                         None,
                     );
                     (return_ty, [params_res, return_res].concat())
@@ -1585,12 +804,8 @@ fn check_rule<'a, 'b>(
     request_resource_data_ty_id: &TypeID,
 ) -> Vec<TypeCheckResult> {
     let variable_type_bindings = HashMap::new();
-    // TODO
-    let mut flow_branch: Vec<Branch> = vec![];
-    let mut branch_count = 0;
 
     let mut result = vec![];
-    let mut _polluted = RefCell::new(false);
 
     info!(
         "begin check rule {:?}",
@@ -1601,126 +816,52 @@ fn check_rule<'a, 'b>(
         .with_source_code(context.source_code.clone())
     );
 
-    loop {
-        let mut flow = flow.clone();
-        let mut flow_branch_depth = 0;
-        let mut on_examination = false;
-        let mut polluted = RefCell::new(false);
-        let (ty, iter_result) = check_expression(
-            &rule.condition,
-            context,
-            &variable_type_bindings,
-            &mut flow,
-            &mut flow_branch,
-            &mut flow_branch_depth,
-            false,
-            &mut polluted,
-            &mut on_examination,
-            false,
-            request_resource_data_ty_id,
-        );
-        result.extend(iter_result);
+    let mut flow = flow.clone();
+    let (ty, iter_result) = check_expression(
+        &rule.condition,
+        context,
+        &variable_type_bindings,
+        &mut flow,
+        request_resource_data_ty_id,
+    );
+    result.extend(iter_result);
 
-        // check condition is boolean
-        let (_, res) = check_can_be(
-            &ty,
-            &Ty::new(TypeKind::Boolean(MayLiteral::Unknown)),
-            &rule.condition,
+    // check condition is boolean
+    let (_, res) = check_can_be(
+        &ty,
+        &Ty::new(TypeKind::Boolean(MayLiteral::Unknown)),
+        &rule.condition,
+        &flow,
+    );
+    result.extend(res);
+
+    // check condition is always ture/false
+    if let Expression {
+        id: _,
+        span: _,
+        kind: ExpressionKind::Literal(Literal::Bool(_)),
+    } = rule.condition
+    {
+    } else {
+        if let OrAny::Bool(true) = ty.can_be(
+            &Ty::new(TypeKind::Boolean(MayLiteral::Literal(true))),
             &flow,
-            &mut _polluted,
-        );
-        result.extend(res);
-
-        // check condition is always ture/false
-        if let Expression {
-            id: _,
-            span: _,
-            kind: ExpressionKind::Literal(Literal::Bool(_)),
-        } = rule.condition
-        {
-        } else {
-            if let OrAny::Bool(true) = ty.can_be(
-                &Ty::new(TypeKind::Boolean(MayLiteral::Literal(true))),
-                &flow,
-                &mut _polluted,
-            ) {
-                result.push(TypeCheckResult {
-                    reason: format!("always true"),
-                    at: rule.condition.get_span().into(),
-                })
-            }
-            if let OrAny::Bool(true) = ty.can_be(
-                &Ty::new(TypeKind::Boolean(MayLiteral::Literal(false))),
-                &flow,
-                &mut _polluted,
-            ) {
-                result.push(TypeCheckResult {
-                    reason: format!("always false"),
-                    at: rule.condition.get_span().into(),
-                })
-            }
+        ) {
+            result.push(TypeCheckResult {
+                reason: format!("always true"),
+                at: rule.condition.get_span().into(),
+            })
         }
-
-        // println!(
-        //     "{:?}",
-        //     flow.get(request_resource_data_ty_id)
-        //         .unwrap()
-        //         .expand_for_debug(&flow)
-        // );
-        // println!("polluted: {}", polluted.borrow());
-        // println!("before {:?}", flow_branch);
-
-        let flow_branch_len = flow_branch.len();
-        if let Some(examination_branch_pos) = flow_branch.iter().rev().position(|branch| {
-            *branch == Branch::Examination(false) || *branch == Branch::Examination(true)
-        }) {
-            match flow_branch[flow_branch_len - 1 - examination_branch_pos] {
-                Branch::Examination(false) => {
-                    flow_branch.drain(flow_branch_len - 1 - examination_branch_pos + 1..);
-                    if *polluted.borrow() == true {
-                        *flow_branch.last_mut().unwrap() = Branch::Side(false)
-                    } else {
-                        *flow_branch.last_mut().unwrap() = Branch::Examination(true)
-                    }
-                }
-                Branch::Examination(true) => {
-                    flow_branch.drain(flow_branch_len - 1 - examination_branch_pos + 1..);
-                    if *polluted.borrow() == true {
-                        *flow_branch.last_mut().unwrap() = Branch::Side(false)
-                    } else {
-                        *flow_branch.last_mut().unwrap() = Branch::Through
-                    }
-                }
-                _ => panic!(),
-            }
-        } else {
-            let non_false_count = flow_branch
-                .iter()
-                .rev()
-                .position(|branch| *branch == Branch::Side(false));
-            match non_false_count {
-                None => {
-                    info!(
-                        "{:#?}",
-                        flow.get(request_resource_data_ty_id)
-                            .unwrap()
-                            .expand_for_debug(&flow)
-                    );
-                    break;
-                }
-                Some(count) => {
-                    flow_branch.drain(flow_branch_len - 1 - count + 1..);
-                    *flow_branch.last_mut().unwrap() = Branch::Side(true);
-                }
-            }
+        if let OrAny::Bool(true) = ty.can_be(
+            &Ty::new(TypeKind::Boolean(MayLiteral::Literal(false))),
+            &flow,
+        ) {
+            result.push(TypeCheckResult {
+                reason: format!("always false"),
+                at: rule.condition.get_span().into(),
+            })
         }
-
-        // println!("after {:?}", flow_branch);
-
-        branch_count += 1;
     }
-
-    debug!("branch count: {:?}", branch_count);
 
     result
 }

@@ -21,16 +21,14 @@ impl TypeID {
 #[derive(Clone)]
 pub enum Ty {
     Type(TypeID, TypeKind),
-    FlowType(TypeID, bool),
+    FlowType(TypeID),
 }
 
 impl std::fmt::Debug for Ty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Type(_arg0, arg1) => f.debug_tuple("Type").field(arg1).finish(),
-            Self::FlowType(arg0, arg1) => {
-                f.debug_tuple("FlowType").field(arg0).field(arg1).finish()
-            }
+            Self::FlowType(arg0) => f.debug_tuple("FlowType").field(arg0).finish(),
         }
     }
 }
@@ -40,48 +38,37 @@ impl Ty {
         Ty::Type(TypeID::new(), kind)
     }
 
-    pub fn kind<'a>(&'a self, flow: &'a Flow, polluted: &'a RefCell<bool>) -> &TypeKind {
+    pub fn kind<'a>(&'a self, flow: &'a Flow) -> &TypeKind {
         match self {
             Ty::Type(_, kind) => kind,
-            Ty::FlowType(id, poison) => {
-                if *poison {
-                    *polluted.borrow_mut() = true;
-                }
-                flow.get(id).unwrap().kind(flow, polluted)
-            }
+            Ty::FlowType(id) => flow.get(id).unwrap().kind(flow),
         }
     }
 
     pub fn expand_for_debug<'a>(&'a self, flow: &'a Flow) -> TypeKind {
-        let _polluted = RefCell::new(false);
-        self.expand(flow, &_polluted)
+        self.expand(flow)
     }
 
-    pub fn expand<'a>(&'a self, flow: &'a Flow, polluted: &'a RefCell<bool>) -> TypeKind {
+    pub fn expand<'a>(&'a self, flow: &'a Flow) -> TypeKind {
         match self {
             Ty::Type(_, kind) => match kind {
-                TypeKind::List(MayLiteral::Literal(ListLiteral::Single(ty))) => {
-                    TypeKind::List(MayLiteral::Literal(ListLiteral::Single(Box::new(Ty::new(
-                        ty.expand(flow, polluted),
-                    )))))
-                }
+                TypeKind::List(MayLiteral::Literal(ListLiteral::Single(ty))) => TypeKind::List(
+                    MayLiteral::Literal(ListLiteral::Single(Box::new(Ty::new(ty.expand(flow))))),
+                ),
                 TypeKind::List(MayLiteral::Literal(ListLiteral::Tuple(tuple))) => {
                     TypeKind::List(MayLiteral::Literal(ListLiteral::Tuple(
-                        tuple
-                            .iter()
-                            .map(|ty| (Ty::new(ty.expand(flow, polluted))))
-                            .collect(),
+                        tuple.iter().map(|ty| (Ty::new(ty.expand(flow)))).collect(),
                     )))
                 }
                 TypeKind::Map(MayLiteral::Literal(MapLiteral { literals, default })) => {
                     TypeKind::Map(MayLiteral::Literal(MapLiteral {
                         literals: literals
                             .iter()
-                            .map(|(key, ty)| (key.clone(), Ty::new(ty.expand(flow, polluted))))
+                            .map(|(key, ty)| (key.clone(), Ty::new(ty.expand(flow))))
                             .collect(),
                         default: default
                             .as_ref()
-                            .map(|ty| Box::new(Ty::new(ty.expand(flow, polluted)))),
+                            .map(|ty| Box::new(Ty::new(ty.expand(flow)))),
                     }))
                 }
                 TypeKind::MapDiff((left, right)) => TypeKind::MapDiff((
@@ -91,13 +78,11 @@ impl Ty {
                             MayLiteral::Literal(MapLiteral {
                                 literals: literals
                                     .iter()
-                                    .map(|(key, ty)| {
-                                        (key.clone(), Ty::new(ty.expand(flow, polluted)))
-                                    })
+                                    .map(|(key, ty)| (key.clone(), Ty::new(ty.expand(flow))))
                                     .collect(),
                                 default: default
                                     .as_ref()
-                                    .map(|ty| Box::new(Ty::new(ty.expand(flow, polluted)))),
+                                    .map(|ty| Box::new(Ty::new(ty.expand(flow)))),
                             })
                         }
                     },
@@ -107,51 +92,43 @@ impl Ty {
                             MayLiteral::Literal(MapLiteral {
                                 literals: literals
                                     .iter()
-                                    .map(|(key, ty)| {
-                                        (key.clone(), Ty::new(ty.expand(flow, polluted)))
-                                    })
+                                    .map(|(key, ty)| (key.clone(), Ty::new(ty.expand(flow))))
                                     .collect(),
                                 default: default
                                     .as_ref()
-                                    .map(|ty| Box::new(Ty::new(ty.expand(flow, polluted)))),
+                                    .map(|ty| Box::new(Ty::new(ty.expand(flow)))),
                             })
                         }
                     },
                 )),
-                TypeKind::Set(MayLiteral::Literal(ty)) => TypeKind::Set(MayLiteral::Literal(
-                    Box::new(Ty::new(ty.expand(flow, polluted))),
-                )),
+                TypeKind::Set(MayLiteral::Literal(ty)) => {
+                    TypeKind::Set(MayLiteral::Literal(Box::new(Ty::new(ty.expand(flow)))))
+                }
                 _ => kind.clone(),
             },
-            Ty::FlowType(id, poison) => {
-                if *poison {
-                    *polluted.borrow_mut() = true;
-                }
-                flow.get(id).unwrap().expand(flow, polluted)
-            }
+            Ty::FlowType(id) => flow.get(id).unwrap().expand(flow),
         }
     }
 
     pub fn get_type_mut<'a>(&'a mut self) -> Option<&'a mut TypeKind> {
         match self {
             Ty::Type(_, kind) => Some(kind),
-            Ty::FlowType(_, _) => None,
+            Ty::FlowType(_) => None,
         }
     }
 
-    pub fn can_be(&self, other: &Self, flow: &Flow, polluted: &RefCell<bool>) -> OrAny {
-        self.kind(flow, polluted)
-            .can_be(&other.kind(flow, polluted), flow, polluted)
+    pub fn can_be(&self, other: &Self, flow: &Flow) -> OrAny {
+        self.kind(flow).can_be(&other.kind(flow), flow)
     }
 
     #[allow(dead_code)]
-    pub fn min(left: &Self, right: &Self, flow: &Flow, polluted: &RefCell<bool>) -> Self {
-        left.can_be(right, flow, polluted)
+    pub fn min(left: &Self, right: &Self, flow: &Flow) -> Self {
+        left.can_be(right, flow)
             .and_then(|result| {
                 if result {
                     Some(left.clone())
                 } else {
-                    right.can_be(left, flow, polluted).and_then(|result| {
+                    right.can_be(left, flow).and_then(|result| {
                         if result {
                             Some(right.clone())
                         } else {
@@ -163,13 +140,13 @@ impl Ty {
             .unwrap_or(Ty::new(TypeKind::Any))
     }
 
-    pub fn max(left: &Self, right: &Self, flow: &Flow, polluted: &RefCell<bool>) -> Self {
-        left.can_be(right, flow, polluted)
+    pub fn max(left: &Self, right: &Self, flow: &Flow) -> Self {
+        left.can_be(right, flow)
             .and_then(|result| {
                 if result {
                     Some(right.clone())
                 } else {
-                    right.can_be(left, flow, polluted).and_then(|result| {
+                    right.can_be(left, flow).and_then(|result| {
                         if result {
                             Some(left.clone())
                         } else {
@@ -185,7 +162,6 @@ impl Ty {
 #[derive(Debug, Clone)]
 pub enum TypeKind {
     Any,
-    Unknown,
     Null,
     Boolean(MayLiteral<bool>),
     Bytes(MayLiteral<Vec<u8>>),
@@ -211,13 +187,13 @@ pub enum ListLiteral {
 }
 
 impl ListLiteral {
-    pub fn max(&self, flow: &Flow, polluted: &RefCell<bool>) -> Ty {
+    pub fn max(&self, flow: &Flow) -> Ty {
         match self {
             ListLiteral::Single(ty) => *ty.clone(),
             ListLiteral::Tuple(tuple) => tuple
                 .clone()
                 .into_iter()
-                .reduce(|left, right| Ty::max(&left, &right, flow, polluted))
+                .reduce(|left, right| Ty::max(&left, &right, flow))
                 .unwrap_or(Ty::new(TypeKind::Any))
                 .clone(),
         }
@@ -290,14 +266,9 @@ impl TypeKind {
         }
     }
 
-    pub fn is_type_coercion_to(
-        &self,
-        target: &Self,
-        flow: &Flow,
-        polluted: &RefCell<bool>,
-    ) -> OrAny {
+    pub fn is_type_coercion_to(&self, target: &Self, flow: &Flow) -> OrAny {
         OrAny::any(self.get_coercion_list().iter(), |candidate| {
-            candidate.can_be(target, flow, polluted)
+            candidate.can_be(target, flow)
         })
     }
 
@@ -328,7 +299,7 @@ impl TypeKind {
     /// subtyping
     ///
     /// return None if Any
-    pub fn can_be(&self, other: &Self, flow: &Flow, polluted: &RefCell<bool>) -> OrAny {
+    pub fn can_be(&self, other: &Self, flow: &Flow) -> OrAny {
         (match (self, other) {
             (TypeKind::Any, _) => OrAny::Any,
             (_, TypeKind::Any) => OrAny::Any,
@@ -342,17 +313,15 @@ impl TypeKind {
             (TypeKind::List(left), TypeKind::List(right)) => {
                 left.can_be_by(right, |left, right| match (left, right) {
                     (ListLiteral::Single(left), ListLiteral::Single(right)) => {
-                        left.can_be(right, flow, polluted)
+                        left.can_be(right, flow)
                     }
                     (ListLiteral::Single(_), ListLiteral::Tuple(_)) => OrAny::Bool(false),
                     (ListLiteral::Tuple(left), ListLiteral::Single(right)) => {
-                        OrAny::all(left.iter(), |item| item.can_be(right, flow, polluted))
+                        OrAny::all(left.iter(), |item| item.can_be(right, flow))
                     }
                     (ListLiteral::Tuple(left), ListLiteral::Tuple(right)) => {
                         if left.len() == right.len() {
-                            OrAny::all(zip(left, right), |(left, right)| {
-                                left.can_be(right, flow, polluted)
-                            })
+                            OrAny::all(zip(left, right), |(left, right)| left.can_be(right, flow))
                         } else {
                             OrAny::Bool(false)
                         }
@@ -362,7 +331,7 @@ impl TypeKind {
             (TypeKind::Map(left), TypeKind::Map(right)) => left.can_be_by(right, |left, right| {
                 OrAny::all(right.literals.iter(), |(right_key, right_value)| {
                     if let Some(left_value) = left.literals.get(right_key) {
-                        left_value.can_be(right_value, flow, polluted)
+                        left_value.can_be(right_value, flow)
                     } else {
                         OrAny::Bool(false)
                     }
@@ -370,7 +339,7 @@ impl TypeKind {
                 .and(|| match &right.default {
                     None => OrAny::Bool(true),
                     Some(right_default_ty) => (if let Some(left_default_ty) = &left.default {
-                        left_default_ty.can_be(&right_default_ty, flow, polluted)
+                        left_default_ty.can_be(&right_default_ty, flow)
                     } else {
                         OrAny::Bool(false)
                     })
@@ -379,7 +348,7 @@ impl TypeKind {
                             left.literals
                                 .iter()
                                 .filter(|(key, _)| !right.literals.contains_key(*key)),
-                            |(_, value)| value.can_be(&right_default_ty, flow, polluted),
+                            |(_, value)| value.can_be(&right_default_ty, flow),
                         )
                     }),
                 })
@@ -387,19 +356,13 @@ impl TypeKind {
             (TypeKind::MapDiff(left), TypeKind::MapDiff(right)) => left
                 .0
                 .can_be_by(&right.0, |left, right| {
-                    TypeKind::Map(MayLiteral::Literal(left.clone())).can_be(
-                        &TypeKind::Map(MayLiteral::Literal(right.clone())),
-                        flow,
-                        polluted,
-                    )
+                    TypeKind::Map(MayLiteral::Literal(left.clone()))
+                        .can_be(&TypeKind::Map(MayLiteral::Literal(right.clone())), flow)
                 })
                 .and(|| {
                     left.1.can_be_by(&right.1, |left, right| {
-                        TypeKind::Map(MayLiteral::Literal(left.clone())).can_be(
-                            &TypeKind::Map(MayLiteral::Literal(right.clone())),
-                            flow,
-                            polluted,
-                        )
+                        TypeKind::Map(MayLiteral::Literal(left.clone()))
+                            .can_be(&TypeKind::Map(MayLiteral::Literal(right.clone())), flow)
                     })
                 }),
             (TypeKind::Path(left), TypeKind::Path(right)) => OrAny::Bool(left.can_be(right)),
@@ -410,23 +373,23 @@ impl TypeKind {
                 OrAny::Bool(left.can_be(right))
             }
             (TypeKind::Set(left), TypeKind::Set(right)) => {
-                left.can_be_by(right, |left, right| left.can_be(right, flow, polluted))
+                left.can_be_by(right, |left, right| left.can_be(right, flow))
             }
             (TypeKind::String(left), TypeKind::String(right)) => OrAny::Bool(left.can_be(right)),
             (TypeKind::Timestamp, TypeKind::Timestamp) => OrAny::Bool(true),
             _ => OrAny::Bool(false),
         })
-        .or(|| self.is_type_coercion_to(other, flow, polluted))
+        .or(|| self.is_type_coercion_to(other, flow))
     }
 
     #[allow(dead_code)]
     pub fn min(left: &Self, right: &Self, flow: &Flow, polluted: &RefCell<bool>) -> Self {
-        left.can_be(right, flow, polluted)
+        left.can_be(right, flow)
             .and_then(|result| {
                 if result {
                     Some(left.clone())
                 } else {
-                    right.can_be(left, flow, polluted).and_then(|result| {
+                    right.can_be(left, flow).and_then(|result| {
                         if result {
                             Some(right.clone())
                         } else {
@@ -439,12 +402,12 @@ impl TypeKind {
     }
 
     pub fn max(left: &Self, right: &Self, flow: &Flow, polluted: &RefCell<bool>) -> Self {
-        left.can_be(right, flow, polluted)
+        left.can_be(right, flow)
             .and_then(|result| {
                 if result {
                     Some(right.clone())
                 } else {
-                    right.can_be(left, flow, polluted).and_then(|result| {
+                    right.can_be(left, flow).and_then(|result| {
                         if result {
                             Some(left.clone())
                         } else {
@@ -459,7 +422,6 @@ impl TypeKind {
     pub fn erase_literal_constraint(&self) -> TypeKind {
         match self {
             TypeKind::Any => TypeKind::Any,
-            TypeKind::Unknown => TypeKind::Unknown,
             TypeKind::Null => TypeKind::Null,
             TypeKind::Boolean(_) => TypeKind::Boolean(MayLiteral::Unknown),
             TypeKind::Bytes(_) => TypeKind::Bytes(MayLiteral::Unknown),
@@ -509,10 +471,7 @@ pub enum MemberKind {
 
 pub struct FunctionInterface<'a>(
     pub (Vec<TypeKind>, TypeKind),
-    pub  Box<
-        dyn Fn(&dyn Node, &Vec<&TypeKind>, &Flow, &RefCell<bool>) -> (Ty, Vec<TypeCheckResult>)
-            + 'a,
-    >,
+    pub Box<dyn Fn(&dyn Node, &Vec<&TypeKind>, &Flow) -> (Ty, Vec<TypeCheckResult>) + 'a>,
 );
 
 impl<'a> std::fmt::Debug for FunctionInterface<'a> {
