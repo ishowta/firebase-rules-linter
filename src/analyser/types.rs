@@ -39,7 +39,6 @@ pub struct AnalysysGlobalContext<'a> {
     pub bindings: &'a Bindings<'a>,
     pub symbol_references: &'a SymbolReferences<'a>,
     pub source_code: &'a String,
-    pub quick_mode: bool,
 }
 
 #[derive(Clone, Debug)]

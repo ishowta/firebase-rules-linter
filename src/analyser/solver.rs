@@ -51,7 +51,8 @@ pub fn solve(source: &String) -> SolverResult {
 
 ;(apply (then (repeat (then simplify solve-eqs (or-else split-clause skip) dom-simplify))))
 (check-sat-using (then (repeat (then simplify solve-eqs (or-else split-clause skip) dom-simplify)) smt))
-(get-model)
+;(get-model)
+(eval request_resource_data_inner)
 ",
         source
     );

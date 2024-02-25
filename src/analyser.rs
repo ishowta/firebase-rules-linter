@@ -29,22 +29,6 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
         rule.get_span().0.start_point.row + 1
     );
 
-    let ctx = AnalysysContext {
-        bindings: ctx.bindings,
-        symbol_references: ctx.symbol_references,
-        source_code: ctx.source_code,
-        quick_mode: ctx.quick_mode,
-        variable_bindings: &HashMap::new(),
-        declarations: &RefCell::new(vec![Declaration {
-            smtlib2: include_str!("analyser/lib.smtlib2").to_owned(),
-        }]),
-    };
-
-    let Res {
-        value: condition_value,
-        constraints: condition_constraints,
-    } = check_expression(&ctx, &rule.condition);
-
     let mut errors = vec![];
 
     let check_always_false_mode = true;
@@ -53,6 +37,21 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
     let mut is_always_false_unsat: bool = true;
     if check_always_false_mode {
         debug!("check always false");
+        let ctx = AnalysysContext {
+            bindings: ctx.bindings,
+            symbol_references: ctx.symbol_references,
+            source_code: ctx.source_code,
+            quick_mode: false,
+            variable_bindings: &HashMap::new(),
+            declarations: &RefCell::new(vec![Declaration {
+                smtlib2: include_str!("analyser/lib.smtlib2").to_owned(),
+            }]),
+        };
+
+        let Res {
+            value: condition_value,
+            constraints: condition_constraints,
+        } = check_expression(&ctx, &rule.condition);
         let source_code = format!(
             "{}
 
@@ -96,7 +95,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
                 debug!("truthly example:\n{}", example);
             }
             SolverResult::Unsat => {
-                info!("unexpected unsat");
+                info!("Always false");
                 is_always_false_unsat = true;
                 errors.push(AnalysysError::new(format!("Always false"), rule))
             }
@@ -116,6 +115,21 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
     // untyped field check
     {
         debug!("1MB check");
+        let ctx = AnalysysContext {
+            bindings: ctx.bindings,
+            symbol_references: ctx.symbol_references,
+            source_code: ctx.source_code,
+            quick_mode: true,
+            variable_bindings: &HashMap::new(),
+            declarations: &RefCell::new(vec![Declaration {
+                smtlib2: include_str!("analyser/lib.smtlib2").to_owned(),
+            }]),
+        };
+
+        let Res {
+            value: condition_value,
+            constraints: condition_constraints,
+        } = check_expression(&ctx, &rule.condition);
         let source_code = format!(
             "{}
 
@@ -169,16 +183,19 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
         match solve(&source_code) {
             SolverResult::Sat(example) => {
                 errors.push(AnalysysError::new(format!("1MB detected"), rule));
-                info!("unexpected sat");
-                debug!("truthly example:\n{}", example);
+                info!("1MB detected");
+                info!("example:\n{}", example);
             }
             SolverResult::Unsat => {
                 debug!("unsat");
             }
-            SolverResult::Unknown | SolverResult::Timeout => errors.push(AnalysysError::new(
-                format!("Static analysis failed because this conditions are too complex."),
-                rule,
-            )),
+            SolverResult::Unknown | SolverResult::Timeout => {
+                info!("timeout, skip");
+                errors.push(AnalysysError::new(
+                    format!("Static analysis failed because this conditions are too complex."),
+                    rule,
+                ))
+            }
         }
     }
     //}

@@ -67,7 +67,6 @@ fn main() {
         bindings: &bindings,
         symbol_references: &symbol_references,
         source_code: &code,
-        quick_mode: true,
     };
 
     let analyse_result = analyze(&analysys_global_context, &ast);
