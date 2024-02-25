@@ -72,19 +72,16 @@ pub fn check_global_function_calling(
                 Constraint::new2(
                     "=",
                     &cur_val,
-                    &Constraint::new1(
-                        "map",
+                    &Constraint::new2(
+                        "insert",
+                        &Constraint::new2("entry", &"data", &data_value),
                         &Constraint::new2(
                             "insert",
-                            &Constraint::new2("entry", &"data", &data_value),
+                            &Constraint::new2("entry", &"id", &id_value),
                             &Constraint::new2(
                                 "insert",
-                                &Constraint::new2("entry", &"id", &id_value),
-                                &Constraint::new2(
-                                    "insert",
-                                    &Constraint::new2("entry", &"__name__", &name_value),
-                                    &Constraint::mono("(as nil (List (Entry String Refl)"),
-                                ),
+                                &Constraint::new2("entry", &"__name__", &name_value),
+                                &Constraint::mono("(as nil (List (Entry String Refl)))"),
                             ),
                         ),
                     ),

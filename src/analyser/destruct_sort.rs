@@ -112,21 +112,18 @@ pub fn destruct_mapdiff(
     refl_sym: &Symbol,
     expr: &dyn Node,
     declarations: &mut Vec<Declaration>,
-) -> (Symbol, Symbol, Symbol, Constraint) {
+) -> (Symbol, Symbol, Constraint) {
     let dest_lvalue = Symbol::new(expr, "mapdiff_l");
     let dest_rvalue = Symbol::new(expr, "mapdiff_r");
-    let dest_bytes_sym = Symbol::new(expr, "mapdiff_bytes");
     declarations.push(Declaration::new(&dest_lvalue, &Sort::Map));
     declarations.push(Declaration::new(&dest_rvalue, &Sort::Map));
-    declarations.push(Declaration::new(&dest_bytes_sym, &Sort::Int));
     (
         dest_lvalue.clone(),
         dest_rvalue.clone(),
-        dest_bytes_sym.clone(),
         Constraint::new2(
             "=",
             refl_sym,
-            &Constraint::new3("mapdiff", &dest_lvalue, &dest_rvalue, &dest_bytes_sym),
+            &Constraint::new2("mapdiff", &dest_lvalue, &dest_rvalue),
         ),
     )
 }

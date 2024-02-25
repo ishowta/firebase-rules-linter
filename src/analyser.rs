@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap};
 
-use log::info;
+use log::{debug, info};
 
 mod check_expression;
 mod check_function;
@@ -18,7 +18,7 @@ use crate::{
         types::{AnalysysContext, Res},
         z3::{Assert, Ast, Constraint, Declaration, Symbol},
     },
-    ast::{Node, Rule, RuleGroup},
+    ast::{Node, Permission, Rule, RuleGroup},
 };
 
 use self::types::{AnalysysError, AnalysysGlobalContext};
@@ -47,12 +47,12 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
 
     let mut errors = vec![];
 
-    let check_always_false_mode = false;
+    let check_always_false_mode = true;
 
     // check always false
     let mut is_always_false_unsat: bool = true;
     if check_always_false_mode {
-        info!("check always false");
+        debug!("check always false");
         let source_code = format!(
             "{}
 
@@ -92,15 +92,15 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
         );
         match solve(&source_code) {
             SolverResult::Sat(example) => {
-                info!("sat");
-                info!("truthly example:\n{}", example);
+                debug!("sat");
+                debug!("truthly example:\n{}", example);
             }
             SolverResult::Unsat => {
-                info!("unsat");
+                info!("unexpected unsat");
                 is_always_false_unsat = true;
                 errors.push(AnalysysError::new(format!("Always false"), rule))
             }
-            SolverResult::Unknown => errors.push(AnalysysError::new(
+            SolverResult::Unknown | SolverResult::Timeout => errors.push(AnalysysError::new(
                 format!("Static analysis failed because this conditions are too complex."),
                 rule,
             )),
@@ -109,10 +109,13 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
 
     let check_limit_mode = true;
 
+    if rule.permissions.iter().any(|permission| {
+        [Permission::Write, Permission::Update, Permission::Create].contains(permission)
+    })
     //if is_always_false_unsat == false && check_limit_mode {
     // untyped field check
     {
-        info!("1MB check");
+        debug!("1MB check");
         let source_code = format!(
             "{}
 
@@ -166,13 +169,13 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
         match solve(&source_code) {
             SolverResult::Sat(example) => {
                 errors.push(AnalysysError::new(format!("1MB detected"), rule));
-                info!("sat");
-                info!("truthly example:\n{}", example);
+                info!("unexpected sat");
+                debug!("truthly example:\n{}", example);
             }
             SolverResult::Unsat => {
-                info!("unsat");
+                debug!("unsat");
             }
-            SolverResult::Unknown => errors.push(AnalysysError::new(
+            SolverResult::Unknown | SolverResult::Timeout => errors.push(AnalysysError::new(
                 format!("Static analysis failed because this conditions are too complex."),
                 rule,
             )),

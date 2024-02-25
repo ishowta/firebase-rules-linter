@@ -5,8 +5,8 @@ use crate::{
 
 use super::{
     destruct_sort::{
-        destruct_bool, destruct_bytes, destruct_int, destruct_list, destruct_map, destruct_set,
-        destruct_string,
+        destruct_bool, destruct_bytes, destruct_int, destruct_list, destruct_map, destruct_mapdiff,
+        destruct_set, destruct_string,
     },
     types::{AnalysysContext, Res},
     z3::{Constraint, Declaration, Sort, Symbol},
@@ -345,7 +345,7 @@ pub fn check_function_calling(
                 let (obj1_inner_val, obj1_inner_bytes, obj1_constraint) =
                     destruct_list(&obj1_val.value, cur_expr, declarations);
                 let (cur_inner_val, cur_inner_bytes, cur_constraint) =
-                    destruct_string(&cur_value, cur_expr, declarations);
+                    destruct_set(&cur_value, cur_expr, declarations);
                 constraints.extend([
                     obj1_constraint,
                     cur_constraint,
@@ -372,9 +372,48 @@ pub fn check_function_calling(
                 ]);
                 constraints
             }
-            "matches" => todo!(),
-            "replace" => todo!(),
-            "split" => todo!(),
+            "matches" => {
+                let [obj_res, regexp_res] = args[..] else {
+                    panic!()
+                };
+                let (_, _, obj_constraint) =
+                    destruct_string(&obj_res.value, cur_expr, declarations);
+                let (_, _, regexp_constraint) =
+                    destruct_string(&regexp_res.value, cur_expr, declarations);
+                let (_, cur_constraint) = destruct_bool(&cur_value, cur_expr, declarations);
+                constraints.extend([obj_constraint, regexp_constraint, cur_constraint]);
+                constraints
+            }
+            "replace" => {
+                let [obj_res, from_res, to_res] = args[..] else {
+                    panic!()
+                };
+                let (_, _, obj_constraint) =
+                    destruct_string(&obj_res.value, cur_expr, declarations);
+                let (_, _, from_constraint) =
+                    destruct_string(&from_res.value, cur_expr, declarations);
+                let (_, _, to_constraint) = destruct_string(&to_res.value, cur_expr, declarations);
+                let (_, _, cur_constraint) = destruct_string(&cur_value, cur_expr, declarations);
+                constraints.extend([
+                    obj_constraint,
+                    from_constraint,
+                    to_constraint,
+                    cur_constraint,
+                ]);
+                constraints
+            }
+            "split" => {
+                let [obj_res, pat_res] = args[..] else {
+                    panic!()
+                };
+                let (_, _, obj_constraint) =
+                    destruct_string(&obj_res.value, cur_expr, declarations);
+                let (_, _, pat_constraint) =
+                    destruct_string(&pat_res.value, cur_expr, declarations);
+                let (_, _, cur_constraint) = destruct_list(&cur_value, cur_expr, declarations);
+                constraints.extend([obj_constraint, pat_constraint, cur_constraint]);
+                constraints
+            }
             "toUtf8" => {
                 let [obj_val] = args[..] else { panic!() };
                 let (_, obj_inner_bytes, obj_constraint) =
@@ -524,7 +563,24 @@ pub fn check_function_calling(
             }
             // mapdiff
             "addedKeys" => todo!(),
-            "affectedKeys" => todo!(),
+            "affectedKeys" => {
+                // TODO
+                let [mapdiff_val] = args[..] else { panic!() };
+                let (mapdiff_left, mapdiff_right, mapdiff_constraint) =
+                    destruct_mapdiff(&mapdiff_val.value, cur_expr, declarations);
+                let (cur_inner_value, _, cur_inner_constraint) =
+                    destruct_list(&cur_value, cur_expr, declarations);
+                constraints.extend([
+                    mapdiff_constraint,
+                    cur_inner_constraint,
+                    Constraint::new2(
+                        "=",
+                        &cur_inner_value,
+                        &Constraint::new1("list-keys", &mapdiff_left),
+                    ),
+                ]);
+                constraints
+            }
             "changedKeys" => todo!(),
             "removedKeys" => todo!(),
             "unchangedKeys" => todo!(),
@@ -1148,8 +1204,8 @@ pub fn check_function_calling(
             let (key_str_val, _, key_str_constraint) =
                 destruct_string(&key_res.value, cur_expr, declarations);
 
-            let (key_int_val, _, key_int_constraint) =
-                destruct_string(&key_res.value, cur_expr, declarations);
+            let (key_int_val, key_int_constraint) =
+                destruct_int(&key_res.value, cur_expr, declarations);
 
             let (obj_list_val, _, obj_list_constraint) =
                 destruct_list(&obj_res.value, cur_expr, declarations);
@@ -1199,7 +1255,11 @@ pub fn check_function_calling(
                     &Constraint::new2(
                         "=",
                         cur_value,
-                        &Constraint::new2("str.at", &obj_str_val, &key_int_val),
+                        &Constraint::new2(
+                            "str",
+                            &Constraint::new2("str.at", &obj_str_val, &key_int_val),
+                            &4, //FIXME
+                        ),
                     ),
                 ),
             ));

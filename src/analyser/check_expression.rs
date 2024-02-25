@@ -1,6 +1,7 @@
-use std::iter::zip;
+use std::{borrow::BorrowMut, iter::zip};
 
 use crate::{
+    analyser::destruct_sort::destruct_string,
     ast::{Expression, ExpressionKind},
     symbol::{FunctionNodeRef, VariableNodeRef},
     ty::FunctionKind,
@@ -149,7 +150,7 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                     Constraint::new2(
                         "=",
                         &cur_value,
-                        &Constraint::new2(
+                        &Constraint::new1(
                             "map",
                             &elems_res.iter().fold(
                                 Constraint::new1("as nil", &Sort::Map),
@@ -158,20 +159,6 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                                         "insert",
                                         &Constraint::new2("entry", *key, &value.value),
                                         &acc,
-                                    )
-                                },
-                            ),
-                            &elems_res.iter().fold(
-                                Constraint::from(Literal::from(0)),
-                                |acc, (_, value)| {
-                                    Constraint::new2(
-                                        "+",
-                                        &2,
-                                        &Constraint::new2(
-                                            "+",
-                                            &Constraint::new1("refl-sum", &value.value),
-                                            &acc,
-                                        ),
                                     )
                                 },
                             ),
@@ -186,7 +173,9 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                     ),
                 ]
             }
-            crate::ast::Literal::Path(_) => vec![Constraint::new2("=", &cur_value, &"path")],
+            crate::ast::Literal::Path(_) => {
+                vec![Constraint::new2("=", &cur_value, &Constraint::mono("path"))]
+            }
         },
         ExpressionKind::Variable(name) => match ctx
             .bindings
@@ -204,13 +193,35 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                     let value = ctx.variable_bindings.get(&node.id).unwrap();
                     vec![Constraint::new2("=", &cur_value, value)]
                 }
-                VariableNodeRef::PathCapture(node) => {
-                    let value = ctx.variable_bindings.get(&node.id).unwrap();
-                    vec![Constraint::new2("=", &cur_value, value)]
+                VariableNodeRef::PathCapture(_) => {
+                    let path_capture_sym = Symbol::new(cur_expr, "path_capture");
+                    ctx.declarations
+                        .borrow_mut()
+                        .push(Declaration::new(&path_capture_sym, &Sort::Refl));
+                    let (_, _, path_capture_constraint) = destruct_string(
+                        &path_capture_sym,
+                        cur_expr,
+                        ctx.declarations.borrow_mut().as_mut(),
+                    );
+                    vec![
+                        path_capture_constraint,
+                        Constraint::new2("=", &cur_value, &path_capture_sym),
+                    ]
                 }
-                VariableNodeRef::PathCaptureGroup(node) => {
-                    let value = ctx.variable_bindings.get(&node.id).unwrap();
-                    vec![Constraint::new2("=", &cur_value, value)]
+                VariableNodeRef::PathCaptureGroup(_) => {
+                    let path_capture_group_sym = Symbol::new(cur_expr, "path_capture_group");
+                    ctx.declarations
+                        .borrow_mut()
+                        .push(Declaration::new(&path_capture_group_sym, &Sort::Refl));
+                    let (_, _, path_capture_group_constraint) = destruct_string(
+                        &path_capture_group_sym,
+                        cur_expr,
+                        ctx.declarations.borrow_mut().as_mut(),
+                    );
+                    vec![
+                        path_capture_group_constraint,
+                        Constraint::new2("=", &cur_value, &path_capture_group_sym),
+                    ]
                 }
                 VariableNodeRef::GlobalVariable(_) => match name.as_str() {
                     "request" => {
@@ -351,11 +362,7 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                         &Constraint::new2(
                             "=",
                             &target_res.value,
-                            &Constraint::new2(
-                                "map",
-                                &inner_sym,
-                                &Constraint::new1("list-sum", &inner_sym),
-                            ),
+                            &Constraint::new1("map", &inner_sym),
                         ),
                     )]
                 }
@@ -504,25 +511,47 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
             let cond_res = check_expression(ctx, &cond_expr);
             let left_res = check_expression(ctx, &left_expr);
             let right_res = check_expression(ctx, &right_expr);
+            let (left_val, left_constraint) = destruct_bool(
+                &left_res.value,
+                left_expr as &Expression,
+                ctx.declarations.borrow_mut().as_mut(),
+            );
+            let (right_val, right_constraint) = destruct_bool(
+                &right_res.value,
+                right_expr as &Expression,
+                ctx.declarations.borrow_mut().as_mut(),
+            );
             vec![Constraint::new2(
                 "=",
                 &cur_value,
-                &Constraint::new3(
-                    "ite",
-                    &Constraint::new2(
+                &Constraint::new1(
+                    "bool",
+                    &Constraint::new3(
                         "and",
-                        &Constraint::new2("=", &cond_res.value, &Constraint::new1("bool", &true)),
-                        &Constraint::new("and", cond_res.constraints.iter().collect()),
-                    ),
-                    &Constraint::new2(
-                        "and",
-                        &left_res.value,
-                        &Constraint::new("and", left_res.constraints.iter().collect()),
-                    ),
-                    &Constraint::new2(
-                        "and",
-                        &right_res.value,
-                        &Constraint::new("and", right_res.constraints.iter().collect()),
+                        &left_constraint,
+                        &right_constraint,
+                        &Constraint::new3(
+                            "ite",
+                            &Constraint::new2(
+                                "and",
+                                &Constraint::new2(
+                                    "=",
+                                    &cond_res.value,
+                                    &Constraint::new1("bool", &true),
+                                ),
+                                &Constraint::new("and", cond_res.constraints.iter().collect()),
+                            ),
+                            &Constraint::new2(
+                                "and",
+                                &left_val,
+                                &Constraint::new("and", left_res.constraints.iter().collect()),
+                            ),
+                            &Constraint::new2(
+                                "and",
+                                &right_val,
+                                &Constraint::new("and", right_res.constraints.iter().collect()),
+                            ),
+                        ),
                     ),
                 ),
             )]

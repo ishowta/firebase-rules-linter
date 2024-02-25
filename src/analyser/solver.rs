@@ -11,13 +11,28 @@ fn run_z3(source: &String) -> String {
         debug_source += format!("{}: {}\n", line_count + 1, line).as_str();
         line_count += 1;
     }
-    info!("RUN Z3:\n{}", debug_source);
+    debug!("RUN Z3:\n{}", debug_source);
     let mut source_file = NamedTempFile::new().unwrap();
     let _ = source_file.write_all(source.as_bytes());
-    let command_result = Command::new("z3").arg(source_file.path()).output();
-    let command_output = String::from_utf8_lossy(&command_result.unwrap().stdout)
+    let command_result = Command::new("z3")
+        .arg("-T:5")
+        .arg(source_file.path())
+        .output();
+    let command_output: String = String::from_utf8_lossy(&command_result.unwrap().stdout)
         .trim()
         .into();
+    if command_output
+        .split("\n")
+        .any(|line| line.starts_with("(error ") && !line.ends_with("model is not available\")"))
+        || command_output
+            .split("\n")
+            .find(|line| ["sat", "unsat", "unknown", "timeout"].contains(line))
+            == None
+    {
+        eprintln!("RUN Z3:\n{}", debug_source);
+        eprintln!("Z3 Error: {}", command_output);
+        panic!();
+    }
     command_output
 }
 
@@ -26,6 +41,7 @@ pub enum SolverResult {
     Sat(String),
     Unsat,
     Unknown,
+    Timeout,
 }
 
 pub fn solve(source: &String) -> SolverResult {
@@ -33,27 +49,27 @@ pub fn solve(source: &String) -> SolverResult {
         "
 {}
 
-(apply (then (repeat (then simplify solve-eqs (or-else split-clause skip) dom-simplify))))
+;(apply (then (repeat (then simplify solve-eqs (or-else split-clause skip) dom-simplify))))
 (check-sat-using (then (repeat (then simplify solve-eqs (or-else split-clause skip) dom-simplify)) smt))
 (get-model)
 ",
         source
     );
     let output = run_z3(&input);
-    info!("{}", output);
+    debug!("{}", output);
     match output
         .split("\n")
-        .find(|line| ["sat", "unsat", "unknown"].contains(line))
+        .find(|line| ["sat", "unsat", "unknown", "timeout"].contains(line))
     {
         Some("sat") => {
             SolverResult::Sat(output.split("\n").skip(1).collect::<Vec<&str>>().join("\n"))
         }
         Some("unsat") => SolverResult::Unsat,
         Some("unknown") => SolverResult::Unknown,
-        Some(error) => {
-            eprintln!("Z3 Error: {}\n{}", error, output);
+        Some("timeout") => SolverResult::Timeout,
+        _ => {
+            eprintln!("Z3 Error: {}", output);
             panic!()
         }
-        _ => panic!(),
     }
 }

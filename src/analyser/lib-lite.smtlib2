@@ -14,7 +14,7 @@
         (timestamp)
         (list (list_val (List Refl)) (list_bytes Int))
         (map (map_val (List (Entry String Refl))))
-        (mapdiff (mapdiff_left (List (Entry String Refl))) (mapdiff_right (List (Entry String Refl))) (mapdiff_bytes Int))
+        (mapdiff (mapdiff_left (List (Entry String Refl))) (mapdiff_right (List (Entry String Refl))))
         (set (set_val (List Refl)) (set_bytes Int))
         (path)
     )
@@ -207,7 +207,7 @@
                     (timestamp 8)
                     ((list v b) b)
                     ((map x) (list-sum x))
-                    ((mapdiff l r b) (* 1024 1024))
+                    ((mapdiff l r) (* 1024 1024))
                     ((set v b) (* 1024 1024))
                     (path (* 6 1024))
                 ))
@@ -236,7 +236,7 @@
         (timestamp 8)
         ((list v b) b)
         ((map x) (list-sum x))
-        ((mapdiff l r b) (* 1024 1024))
+        ((mapdiff l r) (* 1024 1024))
         ((set v b) (* 1024 1024))
         (path (* 6 1024))
     ))
@@ -265,7 +265,7 @@
                 (timestamp true)
                 ((list v b) true)
                 ((map x) (list-is-valid-data x))
-                ((mapdiff l r b) false)
+                ((mapdiff l r) false)
                 ((set v b) false)
                 (path true)
             ))
@@ -297,7 +297,7 @@
                 (timestamp false)
                 ((list v b) false)
                 ((map x) (list-has-untyped-data x))
-                ((mapdiff l r b) false)
+                ((mapdiff l r) false)
                 ((set v b) false)
                 (path false)
             ))
@@ -325,7 +325,7 @@
         (timestamp true)
         ((list v b) true)
         ((map x) (list-is-valid-data x))
-        ((mapdiff l r b) false)
+        ((mapdiff l r) false)
         ((set v b) false)
         (path true)
     ))
@@ -416,7 +416,7 @@
         (timestamp true)
         ((list v b) true)
         ((map x) (map-is-uniq x))
-        ((mapdiff l r b) true)
+        ((mapdiff l r) true)
         ((set v b) true)
         (path true)
     ))
@@ -428,21 +428,11 @@
 (assert (= resource_data (map resource_data_inner)))
 (assert (refl-map-is-uniq resource_data))
 
-(declare-const resource_id Refl)
-(declare-const resource_id_inner String)
-(declare-const resource_id_inner_bytes Int)
-(assert (= resource_id (str resource_id_inner resource_id_inner_bytes)))
-
-(declare-const resource_name Refl)
-(assert (= resource_name path))
-
 (declare-const resource Refl)
 (assert (= resource (map
     (insert (entry "data" resource_data)
-    (insert (entry "id" resource_id)
-    (insert (entry "__name__" resource_name)
     (as nil (List (Entry String Refl))
-    ))))
+    ))
 )))
 
 
@@ -452,135 +442,16 @@
 (assert (= request_resource_data (map request_resource_data_inner)))
 (assert (refl-map-is-uniq request_resource_data))
 
-(declare-const request_resource_id Refl)
-(declare-const request_resource_id_inner String)
-(declare-const request_resource_id_inner_bytes Int)
-(assert (= request_resource_id (str request_resource_id_inner request_resource_id_inner_bytes)))
-
-(declare-const request_resource_name Refl)
-(assert (= request_resource_name path))
-
 (declare-const request_resource Refl)
 (assert (= request_resource (map
     (insert (entry "data" request_resource_data)
-    (insert (entry "id" request_resource_id)
-    (insert (entry "__name__" request_resource_name)
     (as nil (List (Entry String Refl))
-    ))))
+    ))
 )))
-
-(declare-const request_method Refl)
-(declare-const request_method_inner String)
-(declare-const request_method_inner_bytes Int)
-(assert (= request_method (str request_method_inner request_method_inner_bytes)))
-
-(declare-const request_time Refl)
-(assert (= request_time timestamp))
-
-(declare-const request_path Refl)
-(assert (= request_path path))
-
-(declare-const request_query_orderby Refl)
-(declare-const request_query_orderby_inner String)
-(declare-const request_query_orderby_inner_bytes Int)
-(assert (= request_query_orderby (str request_query_orderby_inner request_query_orderby_inner_bytes)))
-
-(declare-const request_query_offset Refl)
-
-(declare-const request_query_limit Refl)
-(declare-const request_query_limit_inner Int)
-(assert (= request_query_limit (int request_query_limit_inner)))
-
-(declare-const request_query Refl)
-(assert (= request_query (map
-    (insert (entry "limit" request_query_limit)
-    (insert (entry "offset" request_query_offset)
-    (insert (entry "orderBy" request_query_orderby)
-    (as nil (List (Entry String Refl))
-    ))))
-)))
-
-(declare-const request_auth_uid Refl)
-(declare-const request_auth_uid_inner String)
-(declare-const request_auth_uid_inner_bytes Int)
-(assert (= request_auth_uid (str request_auth_uid_inner request_auth_uid_inner_bytes)))
-
-(declare-const request_auth_token_email Refl)
-(declare-const request_auth_token_email_inner String)
-(declare-const request_auth_token_email_inner_bytes Int)
-(assert (= request_auth_token_email (str request_auth_token_email_inner request_auth_token_email_inner_bytes)))
-
-(declare-const request_auth_token_email_verified Refl)
-(declare-const request_auth_token_email_verified_inner Bool)
-(assert (= request_auth_token_email_verified (bool request_auth_token_email_verified_inner)))
-
-(declare-const request_auth_token_phone_number Refl)
-(declare-const request_auth_token_phone_number_inner String)
-(declare-const request_auth_token_phone_number_inner_bytes Int)
-(assert (= request_auth_token_phone_number (str request_auth_token_phone_number_inner request_auth_token_phone_number_inner_bytes)))
-
-(declare-const request_auth_token_name Refl)
-(declare-const request_auth_token_name_inner String)
-(declare-const request_auth_token_name_inner_bytes Int)
-(assert (= request_auth_token_name (str request_auth_token_name_inner request_auth_token_name_inner_bytes)))
-
-(declare-const request_auth_token_sub Refl)
-(declare-const request_auth_token_sub_inner String)
-(declare-const request_auth_token_sub_inner_bytes Int)
-(assert (= request_auth_token_sub (str request_auth_token_sub_inner request_auth_token_sub_inner_bytes)))
-
-(declare-const request_auth_token_firebase_sign_in_provider Refl)
-(declare-const request_auth_token_firebase_sign_in_provider_inner String)
-(declare-const request_auth_token_firebase_sign_in_provider_inner_bytes Int)
-(assert (= request_auth_token_firebase_sign_in_provider (str request_auth_token_firebase_sign_in_provider_inner request_auth_token_firebase_sign_in_provider_inner_bytes)))
-
-(declare-const request_auth_token_firebase_tenant Refl)
-(declare-const request_auth_token_firebase_tenant_inner String)
-(declare-const request_auth_token_firebase_tenant_inner_bytes Int)
-(assert (= request_auth_token_firebase_tenant (str request_auth_token_firebase_tenant_inner request_auth_token_firebase_tenant_inner_bytes)))
-
-(declare-const request_auth_token_firebase_identities Refl)
-(declare-const request_auth_token_firebase_identities_inner (List (Entry String Refl)))
-(assert (= request_auth_token_firebase_identities (map request_auth_token_firebase_identities_inner)))
-
-(declare-const request_auth_token_firebase Refl)
-(assert (= request_auth_token_firebase (map
-    (insert (entry "identities" request_auth_token_firebase_identities)
-    (insert (entry "sign_in_provider" request_auth_token_firebase_sign_in_provider)
-    (insert (entry "tenant" request_auth_token_firebase_tenant)
-    (as nil (List (Entry String Refl))
-    ))))
-)))
-
-(declare-const request_auth_token Refl)
-(assert (= request_auth_token (map
-    (insert (entry "email" request_auth_token_email)
-    (insert (entry "email_verified" request_auth_token_email_verified)
-    (insert (entry "phone_number" request_auth_token_phone_number)
-    (insert (entry "name" request_auth_token_name)
-    (insert (entry "sub" request_auth_token_sub)
-    (insert (entry "firebase" request_auth_token_firebase)
-    (as nil (List (Entry String Refl))
-    )))))))
-)))
-
-(declare-const request_auth Refl)
-(assert (= request_auth (map
-    (insert (entry "uid" request_auth_uid)
-    (insert (entry "token" request_auth_token)
-    (as nil (List (Entry String Refl))
-    )))
-)))
-
 
 (declare-const request Refl)
 (assert (= request (map
-    (insert (entry "auth" request_auth)
-    (insert (entry "method" request_method)
-    (insert (entry "path" request_path)
-    (insert (entry "query" request_query)
     (insert (entry "resource" request_resource)
-    (insert (entry "time" request_time)
     (as nil (List (Entry String Refl))
-    )))))))
+    ))
 )))
