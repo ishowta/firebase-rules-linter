@@ -46,9 +46,11 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
 
     let mut errors = vec![];
 
+    let check_always_false_mode = false;
+
     // check always false
-    let mut is_always_false_unsat: bool = false;
-    {
+    let mut is_always_false_unsat: bool = true;
+    if check_always_false_mode {
         info!("check always false");
         let source_code = format!(
             "{}
@@ -106,73 +108,76 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
 
     let check_limit_mode = true;
 
-    if is_always_false_unsat == false && check_limit_mode {
-        // untyped field check
-        {
-            info!("untyped field check");
-            let source_code = format!(
-                "{}
+    //if is_always_false_unsat == false && check_limit_mode {
+    // untyped field check
+    {
+        info!("untyped field check");
+        let source_code = format!(
+            "{}
 
 {}
+
+;(declare-const request_resource_data_inner_inner (List (Entry String Refl)))
+;(assert (= request_resource_data_inner (insert undefined request_resource_data_inner_inner)))
 
 {}
 {}
 ",
-                ctx.declarations
-                    .borrow()
-                    .iter()
-                    .map(|declaration| declaration.as_smtlib2())
-                    .collect::<Vec<String>>()
-                    .join("\n"),
-                condition_constraints
-                    .iter()
-                    .map(|constraint| Assert::new(constraint).as_smtlib2())
-                    .collect::<Vec<String>>()
-                    .join("\n"),
-                Assert::new(&Constraint::new2(
-                    "=",
-                    &condition_value,
-                    &Constraint::new1("bool", &true)
-                ))
-                .as_smtlib2(),
-                // Assert::new(&Constraint::new2(
-                //     "=",
-                //     &Constraint::new1(
-                //         "list-has-untyped-data",
-                //         &Constraint::mono("request_resource_data_inner")
-                //     ),
-                //     &true
-                // ))
-                // .as_smtlib2(),
-                // TODO: 1MB limit
-                Assert::new(&Constraint::new2(
-                    ">",
-                    &Constraint::new1(
-                        "list-sum",
-                        &Symbol {
-                            smtlib2: "request_resource_data_inner".to_string()
-                        }
-                    ),
-                    &(1024 * 1024)
-                ))
-                .as_smtlib2()
-            );
-            match solve(&source_code) {
-                SolverResult::Sat(example) => {
-                    errors.push(AnalysysError::new(format!("untyped field allowed"), rule));
-                    info!("sat");
-                    info!("truthly example:\n{}", example);
-                }
-                SolverResult::Unsat => {
-                    info!("unsat");
-                }
-                SolverResult::Unknown => errors.push(AnalysysError::new(
-                    format!("Static analysis failed because this conditions are too complex."),
-                    rule,
-                )),
+            ctx.declarations
+                .borrow()
+                .iter()
+                .map(|declaration| declaration.as_smtlib2())
+                .collect::<Vec<String>>()
+                .join("\n"),
+            condition_constraints
+                .iter()
+                .map(|constraint| Assert::new(constraint).as_smtlib2())
+                .collect::<Vec<String>>()
+                .join("\n"),
+            Assert::new(&Constraint::new2(
+                "=",
+                &condition_value,
+                &Constraint::new1("bool", &true)
+            ))
+            .as_smtlib2(),
+            // Assert::new(&Constraint::new2(
+            //     "=",
+            //     &Constraint::new1(
+            //         "list-has-untyped-data",
+            //         &Constraint::mono("request_resource_data_inner")
+            //     ),
+            //     &true
+            // ))
+            // .as_smtlib2(),
+            // TODO: 1MB limit
+            Assert::new(&Constraint::new2(
+                ">",
+                &Constraint::new1(
+                    "list-sum",
+                    &Symbol {
+                        smtlib2: "request_resource_data_inner".to_string()
+                    }
+                ),
+                &(1024 * 1024)
+            ))
+            .as_smtlib2()
+        );
+        match solve(&source_code) {
+            SolverResult::Sat(example) => {
+                errors.push(AnalysysError::new(format!("untyped field allowed"), rule));
+                info!("sat");
+                info!("truthly example:\n{}", example);
             }
+            SolverResult::Unsat => {
+                info!("unsat");
+            }
+            SolverResult::Unknown => errors.push(AnalysysError::new(
+                format!("Static analysis failed because this conditions are too complex."),
+                rule,
+            )),
         }
     }
+    //}
 
     errors
 }
