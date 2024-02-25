@@ -111,7 +111,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
     //if is_always_false_unsat == false && check_limit_mode {
     // untyped field check
     {
-        info!("untyped field check");
+        info!("1MB check");
         let source_code = format!(
             "{}
 
@@ -164,7 +164,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
         );
         match solve(&source_code) {
             SolverResult::Sat(example) => {
-                errors.push(AnalysysError::new(format!("untyped field allowed"), rule));
+                errors.push(AnalysysError::new(format!("1MB detected"), rule));
                 info!("sat");
                 info!("truthly example:\n{}", example);
             }
