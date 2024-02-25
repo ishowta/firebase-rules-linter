@@ -32,32 +32,36 @@ fn main() {
     let (flow, globals, request_resource_data_ty_id) = get_globals();
 
     let (bindings, symbol_references, bind_lint_result) = bind(&ast, &globals);
+    let bind_lint_result_len = bind_lint_result.len();
 
-    // let type_check_context = TypeCheckContext {
-    //     bindings: &bindings,
-    //     symbol_references: &symbol_references,
-    //     source_code: &code,
-    // };
+    for result in bind_lint_result {
+        println!("{:?}", result.with_source_code(code.clone()));
+    }
 
-    // let type_check_result = check(
-    //     &ast,
-    //     &type_check_context,
-    //     &flow,
-    //     &request_resource_data_ty_id,
-    // );
+    let type_check_context = TypeCheckContext {
+        bindings: &bindings,
+        symbol_references: &symbol_references,
+        source_code: &code,
+    };
 
-    // let mut type_check_result: Vec<&TypeCheckResult> = type_check_result
-    //     .iter()
-    //     .collect::<HashSet<&TypeCheckResult>>()
-    //     .iter()
-    //     .cloned()
-    //     .collect();
-    // type_check_result.sort_by(|a, b| a.at.offset().cmp(&b.at.offset()));
+    let type_check_result = check(
+        &ast,
+        &type_check_context,
+        &flow,
+        &request_resource_data_ty_id,
+    );
 
-    // let results: Vec<Report> = bind_lint_result
-    //     .into_iter()
-    //     .chain(type_check_result.iter().map(|x| Report::from((*x).clone())))
-    //     .collect();
+    let mut type_check_result: Vec<&TypeCheckResult> = type_check_result
+        .iter()
+        .collect::<HashSet<&TypeCheckResult>>()
+        .iter()
+        .cloned()
+        .collect();
+    type_check_result.sort_by(|a, b| a.at.offset().cmp(&b.at.offset()));
+
+    for result in type_check_result.iter().map(|x| Report::from((*x).clone())) {
+        println!("{:?}", result.with_source_code(code.clone()));
+    }
 
     let analysys_global_context = AnalysysGlobalContext {
         bindings: &bindings,
@@ -68,15 +72,11 @@ fn main() {
 
     let analyse_result = analyze(&analysys_global_context, &ast);
 
-    let results: Vec<Report> = bind_lint_result
-        .into_iter()
-        .chain(analyse_result.iter().map(|x| Report::from((*x).clone())))
-        .collect();
-
-    let result_count = results.len();
-    for result in results {
+    for result in analyse_result.iter().map(|x| Report::from((*x).clone())) {
         println!("{:?}", result.with_source_code(code.clone()));
     }
+
+    let result_count = bind_lint_result_len + type_check_result.len() + analyse_result.len();
 
     println!("{} errors found.", result_count);
 }
