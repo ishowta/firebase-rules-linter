@@ -159,7 +159,11 @@ pub fn check_function_calling(
                             "=",
                             &cur_inner_val,
                             &Constraint::new2(
-                                "refl-list-in-refl-list",
+                                if ctx.quick_mode {
+                                    "="
+                                } else {
+                                    "refl-list-in-refl-list"
+                                },
                                 &target_list_val,
                                 &keys_list_val,
                             ),
@@ -1079,21 +1083,31 @@ pub fn check_function_calling(
                 let (obj_set_val, _, obj_set_constraint) =
                     destruct_set(&obj_res.value, cur_expr, declarations);
 
-                constraints.push(Constraint::new3(
-                    "or",
-                    &Constraint::new3(
-                        "and",
-                        &obj_map_constraint,
-                        &key_str_constraint,
-                        &Constraint::new2(
-                            "=",
-                            cur_value,
-                            &Constraint::new1(
-                                "bool",
-                                &Constraint::new2("list-exists", &obj_map_val, &key_str_val),
-                            ),
+                let normal = &Constraint::new3(
+                    "and",
+                    &obj_map_constraint,
+                    &key_str_constraint,
+                    &Constraint::new2(
+                        "=",
+                        cur_value,
+                        &Constraint::new1(
+                            "bool",
+                            &Constraint::new2("list-exists", &obj_map_val, &key_str_val),
                         ),
                     ),
+                );
+
+                let quick = &Constraint::new4(
+                    "and",
+                    &obj_map_constraint,
+                    &key_str_constraint,
+                    &Constraint::new2("=", cur_value, &Constraint::new1("bool", &true)),
+                    &Constraint::new2("list-exists", &obj_map_val, &key_str_val),
+                );
+
+                constraints.push(Constraint::new3(
+                    "or",
+                    if ctx.quick_mode { quick } else { normal },
                     &Constraint::new2(
                         "and",
                         &obj_list_constraint,

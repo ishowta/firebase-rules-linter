@@ -39,6 +39,7 @@ pub struct AnalysysGlobalContext<'a> {
     pub bindings: &'a Bindings<'a>,
     pub symbol_references: &'a SymbolReferences<'a>,
     pub source_code: &'a String,
+    pub quick_mode: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -48,4 +49,5 @@ pub struct AnalysysContext<'a, 'ctx> {
     pub source_code: &'a String,
     pub declarations: &'ctx RefCell<Vec<Declaration>>,
     pub variable_bindings: &'ctx HashMap<&'a NodeID, Symbol>,
+    pub quick_mode: bool,
 }

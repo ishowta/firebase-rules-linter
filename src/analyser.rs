@@ -33,6 +33,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
         bindings: ctx.bindings,
         symbol_references: ctx.symbol_references,
         source_code: ctx.source_code,
+        quick_mode: ctx.quick_mode,
         variable_bindings: &HashMap::new(),
         declarations: &RefCell::new(vec![Declaration {
             smtlib2: include_str!("analyser/lib.smtlib2").to_owned(),
