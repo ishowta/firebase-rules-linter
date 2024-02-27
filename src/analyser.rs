@@ -44,7 +44,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
             quick_mode: false,
             variable_bindings: &HashMap::new(),
             declarations: &RefCell::new(vec![Declaration {
-                smtlib2: include_str!("analyser/lib.smtlib2").to_owned(),
+                smtlib2: include_str!("analyser/lib.smt2").to_owned(),
             }]),
         };
 
