@@ -164,13 +164,17 @@ pub fn check_expression(ctx: &AnalysysContext, cur_expr: &Expression) -> Res {
                             ),
                         ),
                     ),
-                    Constraint::new(
-                        "and",
-                        elems_res
-                            .iter()
-                            .flat_map(|(_, res)| &res.constraints)
-                            .collect(),
-                    ),
+                    if elems_res.len() == 0 {
+                        Constraint::mono("true")
+                    } else {
+                        Constraint::new(
+                            "and",
+                            elems_res
+                                .iter()
+                                .flat_map(|(_, res)| &res.constraints)
+                                .collect(),
+                        )
+                    },
                 ]
             }
             crate::ast::Literal::Path(_) => {
