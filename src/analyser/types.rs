@@ -6,6 +6,7 @@ use thiserror::Error;
 use crate::{
     ast::{Node, NodeID},
     symbol::{Bindings, SymbolReferences},
+    Config,
 };
 
 use super::z3::{Constraint, Declaration, Symbol};
@@ -39,6 +40,7 @@ pub struct AnalysysGlobalContext<'a> {
     pub bindings: &'a Bindings<'a>,
     pub symbol_references: &'a SymbolReferences<'a>,
     pub source_code: &'a String,
+    pub config: &'a Config,
 }
 
 #[derive(Clone, Debug)]

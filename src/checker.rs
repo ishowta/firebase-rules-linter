@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, hash::Hash, iter::zip};
+use std::{collections::HashMap, hash::Hash, iter::zip};
 
 use log::{debug, info};
 use miette::{Diagnostic, Report, SourceSpan};
@@ -7,7 +7,7 @@ use thiserror::Error;
 use crate::{
     ast::{
         Ast, BinaryLiteral, Expression, ExpressionKind, Function, Literal, Node, NodeID,
-        PathLiteral, Rule, RuleGroup, UnaryLiteral,
+        PathLiteral, Rule, RuleGroup,
     },
     orany::OrAny,
     symbol::{Bindings, FunctionNodeRef, SymbolReferences, VariableNodeRef},
@@ -15,6 +15,7 @@ use crate::{
         Flow, FunctionInterface, FunctionKind, ListLiteral, MapLiteral, MayLiteral, MemberKind, Ty,
         TypeID, TypeKind,
     },
+    Config,
 };
 
 #[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq, Hash)]
@@ -40,6 +41,7 @@ pub struct TypeCheckContext<'a> {
     pub bindings: &'a Bindings<'a>,
     pub symbol_references: &'a SymbolReferences<'a>,
     pub source_code: &'a String,
+    pub config: &'a Config,
 }
 
 pub type VariableTypeBindings<'a> = HashMap<&'a NodeID, Ty>;
