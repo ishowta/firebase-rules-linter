@@ -1,9 +1,21 @@
-use std::{io::Write, process::Command};
+use std::io::Write;
+use tokio::process::Command;
 
-use log::{debug, info};
+use log::debug;
 use tempfile::NamedTempFile;
 
-fn run_z3(source: &String) -> String {
+#[test]
+fn test() {
+    let command_result = std::process::Command::new("/bin/bash")
+        //.arg("-T:5")
+        .arg("-c")
+        .arg("echo 3 && echo 4")
+        .output()
+        .unwrap();
+    println!("{:?}", command_result)
+}
+
+async fn run_z3(source: &String) -> String {
     debug!("{}", source);
     let mut debug_source = "".to_owned();
     let mut line_count = 0;
@@ -14,13 +26,22 @@ fn run_z3(source: &String) -> String {
     debug!("RUN Z3:\n{}", debug_source);
     let mut source_file = NamedTempFile::new().unwrap();
     let _ = source_file.write_all(source.as_bytes());
-    let command_result = Command::new("z3")
-        .arg("-T:5")
-        .arg(source_file.path())
-        .output();
-    let command_output: String = String::from_utf8_lossy(&command_result.unwrap().stdout)
+    let command_result = Command::new("/bin/sh")
+        //.arg("-T:5")
+        .arg("-c")
+        .arg(format!(
+            "ulimit -t 5 && z3 {}",
+            source_file.path().to_str().unwrap()
+        ))
+        .output()
+        .await
+        .unwrap();
+    let command_output: String = String::from_utf8_lossy(&command_result.stdout)
         .trim()
         .into();
+    if command_output == "" {
+        return "timeout".to_owned();
+    }
     if command_output
         .split("\n")
         .any(|line| line.starts_with("(error ") && !line.ends_with("model is not available\")"))
@@ -44,7 +65,7 @@ pub enum SolverResult {
     Timeout,
 }
 
-pub fn solve(source: &String) -> SolverResult {
+pub async fn solve(source: &String) -> SolverResult {
     let input = format!(
         "
 {}
@@ -56,7 +77,7 @@ pub fn solve(source: &String) -> SolverResult {
 ",
         source
     );
-    let output = run_z3(&input);
+    let output = run_z3(&input).await;
     debug!("{}", output);
     match output
         .split("\n")

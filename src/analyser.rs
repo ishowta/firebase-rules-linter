@@ -1,5 +1,7 @@
 use std::{cell::RefCell, collections::HashMap};
 
+use async_recursion::async_recursion;
+use futures::{future::join_all, join};
 use log::{debug, info};
 
 mod check_expression;
@@ -23,7 +25,7 @@ use crate::{
 
 use self::types::{AnalysysError, AnalysysGlobalContext};
 
-fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
+async fn check_rule<'a>(ctx: &AnalysysGlobalContext<'a>, rule: &Rule) -> Vec<AnalysysError> {
     info!(
         "check rule at {} line",
         rule.get_span().0.start_point.row + 1
@@ -40,6 +42,10 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
             .permissions
             .iter()
             .any(|permission| [Permission::Write, Permission::Create].contains(permission))
+        && !rule
+            .permissions
+            .iter()
+            .any(|permission| [Permission::Update].contains(permission))
     {
         debug!("check always false");
         let ctx = AnalysysContext {
@@ -94,7 +100,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
             ))
             .as_smtlib2(),
         );
-        match solve(&source_code) {
+        match solve(&source_code).await {
             SolverResult::Sat(example) => {
                 debug!("sat");
                 debug!("truthly example:\n{}", example);
@@ -186,7 +192,7 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
             ))
             .as_smtlib2()
         );
-        match solve(&source_code) {
+        match solve(&source_code).await {
             SolverResult::Sat(example) => {
                 errors.push(AnalysysError::new(format!("1MB detected"), rule));
                 info!("1MB detected");
@@ -209,33 +215,40 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
     errors
 }
 
-fn check_rule_group(ctx: &AnalysysGlobalContext, rule_group: &RuleGroup) -> Vec<AnalysysError> {
-    rule_group
-        .rules
-        .iter()
-        .map(|rule| check_rule(ctx, rule))
-        .flatten()
-        .chain(
+#[async_recursion(?Send)]
+async fn check_rule_group<'a>(
+    ctx: &AnalysysGlobalContext<'a>,
+    rule_group: &RuleGroup,
+) -> Vec<AnalysysError> {
+    let (rule_res, rule_group_res) = join!(
+        join_all(rule_group.rules.iter().map(|rule| check_rule(ctx, rule))),
+        join_all(
             rule_group
                 .rule_groups
                 .iter()
-                .map(|rule_group| check_rule_group(ctx, rule_group))
-                .flatten(),
-        )
+                .map(|rule_group| check_rule_group(ctx, rule_group)),
+        ),
+    );
+    rule_res
+        .into_iter()
+        .flatten()
+        .chain(rule_group_res.into_iter().flatten())
         .collect()
 }
 
-pub fn analyze(ctx: &AnalysysGlobalContext, ast: &crate::ast::Ast) -> Vec<AnalysysError> {
-    ast.tree
-        .services
-        .iter()
-        .map(|service| {
+#[tokio::main]
+pub async fn analyze(ctx: &AnalysysGlobalContext, ast: &crate::ast::Ast) -> Vec<AnalysysError> {
+    join_all(ast.tree.services.iter().map(|service| {
+        join_all(
             service
                 .rule_groups
                 .iter()
-                .map(|rule_group| check_rule_group(ctx, rule_group))
-                .flatten()
-        })
-        .flatten()
-        .collect()
+                .map(|rule_group| check_rule_group(ctx, rule_group)),
+        )
+    }))
+    .await
+    .into_iter()
+    .flatten()
+    .flatten()
+    .collect()
 }
