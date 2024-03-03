@@ -34,8 +34,13 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
     let check_always_false_mode = true;
 
     // check always false
-    let mut is_always_false_unsat: bool = true;
-    if check_always_false_mode {
+    let mut is_always_false_unsat: bool = false;
+    if check_always_false_mode
+        && rule
+            .permissions
+            .iter()
+            .any(|permission| [Permission::Write, Permission::Create].contains(permission))
+    {
         debug!("check always false");
         let ctx = AnalysysContext {
             bindings: ctx.bindings,
@@ -108,9 +113,10 @@ fn check_rule(ctx: &AnalysysGlobalContext, rule: &Rule) -> Vec<AnalysysError> {
 
     let check_limit_mode = true;
 
-    if rule.permissions.iter().any(|permission| {
-        [Permission::Write, Permission::Update, Permission::Create].contains(permission)
-    })
+    if !is_always_false_unsat
+        && rule.permissions.iter().any(|permission| {
+            [Permission::Write, Permission::Update, Permission::Create].contains(permission)
+        })
     //if is_always_false_unsat == false && check_limit_mode {
     // untyped field check
     {

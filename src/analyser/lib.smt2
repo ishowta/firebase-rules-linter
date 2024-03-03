@@ -425,7 +425,14 @@
 ; Resource
 (declare-const resource_data Refl)
 (declare-const resource_data_inner (List (Entry String Refl)))
-(assert (= resource_data (map resource_data_inner)))
+; It is difficult to consider the contents of resource.data, so compromise and empty the contents or null
+(assert (or
+    (= resource_data null)
+    (and
+        (= resource_data (map resource_data_inner))
+        (= resource_data_inner (as nil (List (Entry String Refl))))
+    )
+))
 (assert (refl-map-is-uniq resource_data))
 
 (declare-const resource_id Refl)
