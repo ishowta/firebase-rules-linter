@@ -2,6 +2,7 @@ use std::{cell::RefCell, collections::HashMap};
 
 use async_recursion::async_recursion;
 use futures::{future::join_all, join};
+use indicatif::ProgressBar;
 use log::{debug, info};
 
 mod check_expression;
@@ -25,7 +26,11 @@ use crate::{
 
 use self::types::{AnalysysError, AnalysysGlobalContext};
 
-async fn check_rule<'a>(ctx: &AnalysysGlobalContext<'a>, rule: &Rule) -> Vec<AnalysysError> {
+async fn check_rule<'a>(
+    ctx: &AnalysysGlobalContext<'a>,
+    rule: &Rule,
+    progress_bar: &ProgressBar,
+) -> Vec<AnalysysError> {
     info!(
         "check rule at {} line",
         rule.get_span().0.start_point.row + 1
@@ -117,13 +122,10 @@ async fn check_rule<'a>(ctx: &AnalysysGlobalContext<'a>, rule: &Rule) -> Vec<Ana
         }
     }
 
-    let check_limit_mode = true;
-
     if !is_always_false_unsat
         && rule.permissions.iter().any(|permission| {
             [Permission::Write, Permission::Update, Permission::Create].contains(permission)
         })
-    //if is_always_false_unsat == false && check_limit_mode {
     // untyped field check
     {
         debug!("1MB check");
@@ -210,7 +212,8 @@ async fn check_rule<'a>(ctx: &AnalysysGlobalContext<'a>, rule: &Rule) -> Vec<Ana
             }
         }
     }
-    //}
+
+    progress_bar.inc(1);
 
     errors
 }
@@ -219,14 +222,20 @@ async fn check_rule<'a>(ctx: &AnalysysGlobalContext<'a>, rule: &Rule) -> Vec<Ana
 async fn check_rule_group<'a>(
     ctx: &AnalysysGlobalContext<'a>,
     rule_group: &RuleGroup,
+    progress_bar: &ProgressBar,
 ) -> Vec<AnalysysError> {
     let (rule_res, rule_group_res) = join!(
-        join_all(rule_group.rules.iter().map(|rule| check_rule(ctx, rule))),
+        join_all(
+            rule_group
+                .rules
+                .iter()
+                .map(|rule| check_rule(ctx, rule, progress_bar))
+        ),
         join_all(
             rule_group
                 .rule_groups
                 .iter()
-                .map(|rule_group| check_rule_group(ctx, rule_group)),
+                .map(|rule_group| check_rule_group(ctx, rule_group, progress_bar)),
         ),
     );
     rule_res
@@ -236,14 +245,39 @@ async fn check_rule_group<'a>(
         .collect()
 }
 
+fn count_rule_in_rule_group(rule_group: &RuleGroup) -> u64 {
+    rule_group.rules.len() as u64
+        + rule_group
+            .rule_groups
+            .iter()
+            .map(|rule_group| count_rule_in_rule_group(rule_group))
+            .sum::<u64>()
+}
+
+fn count_rule(ast: &crate::ast::Ast) -> u64 {
+    ast.tree
+        .services
+        .iter()
+        .map(|service| {
+            service
+                .rule_groups
+                .iter()
+                .map(|rule_group| count_rule_in_rule_group(rule_group))
+                .sum::<u64>()
+        })
+        .sum::<u64>()
+}
+
 #[tokio::main]
 pub async fn analyze(ctx: &AnalysysGlobalContext, ast: &crate::ast::Ast) -> Vec<AnalysysError> {
+    let rule_count = count_rule(ast);
+    let progress_bar = ProgressBar::new(rule_count);
     join_all(ast.tree.services.iter().map(|service| {
         join_all(
             service
                 .rule_groups
                 .iter()
-                .map(|rule_group| check_rule_group(ctx, rule_group)),
+                .map(|rule_group| check_rule_group(ctx, rule_group, &progress_bar)),
         )
     }))
     .await
