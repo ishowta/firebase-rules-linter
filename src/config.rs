@@ -7,8 +7,8 @@ pub struct LintError {
     pub span: SourceSpan,
 }
 
-#[derive(Clone, Debug, Deserialize)]
 #[serde_inline_default]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct LinterRules {
     #[serde_inline_default(<LinterRules as Default>::default().no_unnecessary_condition)]

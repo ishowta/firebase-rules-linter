@@ -275,6 +275,22 @@
 )
 
 (define-fun-rec
+    list-has-unexpected-field
+    (
+        (lst (List (Entry String Refl)))
+    )
+    Bool
+    (if
+        (= lst (as nil (List (Entry String Refl))))
+        false
+        (or
+            (= (key (head lst)) "__INVALID__")
+            (list-has-unexpected-field (tail lst))
+        )
+    )
+)
+
+(define-fun-rec
     list-has-untyped-data
     (
         (lst (List (Entry String Refl)))
