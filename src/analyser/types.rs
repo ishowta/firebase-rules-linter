@@ -5,8 +5,8 @@ use thiserror::Error;
 
 use crate::{
     ast::{Node, NodeID},
+    config::Config,
     symbol::{Bindings, SymbolReferences},
-    Config,
 };
 
 use super::z3::{Constraint, Declaration, Symbol};

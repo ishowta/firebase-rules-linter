@@ -3,9 +3,10 @@ use thiserror::Error;
 
 use crate::{
     ast::{
-        Ast, Expression, ExpressionKind, Function, MatchPathLiteral, Node, PathLiteral, Rule,
-        RuleGroup, RulesTree, Service,
+        Argument, Ast, Expression, ExpressionKind, Function, MatchPathLiteral, Node, PathLiteral,
+        Rule, RuleGroup, RulesTree, Service,
     },
+    config::{Config, LintError},
     symbol::{Bindings, FunctionNodeRef, SymbolID, SymbolReferences, VariableNodeRef},
     ty::{FunctionInterface, Ty},
 };
@@ -106,55 +107,65 @@ impl<'a> ScopeDefinitions<'a> {
     }
     pub fn insert_variable(
         &mut self,
+        config: &Config,
         name: &'a str,
         symbol: (SymbolID, VariableNodeRef<'a>),
-    ) -> Option<Report> {
+    ) -> Option<LintError> {
         let shadowed = self.get_variable_already_declared(name).cloned();
         self.scope_definitions
             .last_mut()
             .unwrap()
             .variables
             .insert(name, symbol.clone());
-        if let Some(shadowed_symbol) = shadowed {
-            Some(Report::from(VariableShadowed {
-                name: name.to_owned(),
-                at: symbol.1.get_node().unwrap().get_span().into(),
-                to: shadowed_symbol
-                    .1
-                    .get_node()
-                    .and_then(|n| Some(n.get_span().into())),
-            }))
-        } else {
-            None
+        if config.rules.no_shadow {
+            if let Some(shadowed_symbol) = shadowed {
+                return Some(LintError {
+                    report: Report::from(VariableShadowed {
+                        name: name.to_owned(),
+                        at: symbol.1.get_node().unwrap().get_span().into(),
+                        to: shadowed_symbol
+                            .1
+                            .get_node()
+                            .and_then(|n| Some(n.get_span().into())),
+                    }),
+                    span: symbol.1.get_node().unwrap().get_span().into(),
+                });
+            }
         }
+        None
     }
     pub fn insert_function(
         &mut self,
+        config: &'a Config,
         name: &'a str,
         symbol: (SymbolID, FunctionNodeRef<'a>),
-    ) -> Option<Report> {
+    ) -> Option<LintError> {
         let shadowed = self.get_function_already_declared(name).cloned();
         self.scope_definitions
             .last_mut()
             .unwrap()
             .functions
             .insert(name, symbol.clone());
-        if let Some(shadowed_symbol) = shadowed {
-            Some(Report::from(FunctionShadowed {
-                name: name.to_owned(),
-                at: symbol.1.get_node().unwrap().get_span().into(),
-                to: shadowed_symbol
-                    .1
-                    .get_node()
-                    .and_then(|n| Some(n.get_span().into())),
-            }))
-        } else {
-            None
+        if config.rules.no_shadow {
+            if let Some(shadowed_symbol) = shadowed {
+                return Some(LintError {
+                    report: Report::from(FunctionShadowed {
+                        name: name.to_owned(),
+                        at: symbol.1.get_node().unwrap().get_span().into(),
+                        to: shadowed_symbol
+                            .1
+                            .get_node()
+                            .and_then(|n| Some(n.get_span().into())),
+                    }),
+                    span: symbol.1.get_node().unwrap().get_span().into(),
+                });
+            }
         }
+        None
     }
 }
 
-#[derive(Clone, Debug, Error, Diagnostic)]
+#[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq, Hash)]
 #[error("Variable `{}` not found", self.name)]
 #[diagnostic()]
 pub struct VariableNotFound {
@@ -163,7 +174,7 @@ pub struct VariableNotFound {
     pub at: SourceSpan,
 }
 
-#[derive(Clone, Debug, Error, Diagnostic)]
+#[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq, Hash)]
 #[error("Function `{}()` not found", self.name)]
 #[diagnostic()]
 pub struct FunctionNotFound {
@@ -172,8 +183,19 @@ pub struct FunctionNotFound {
     pub at: SourceSpan,
 }
 
-#[derive(Clone, Debug, Error, Diagnostic)]
-#[error("Variable `{}` shadowed", self.name)]
+#[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq, Hash)]
+#[error("Argument {} already declared", self.name)]
+#[diagnostic()]
+pub struct ArgumentDuplicated {
+    pub name: String,
+    #[label("already declared here")]
+    pub to: SourceSpan,
+    #[label("declared here")]
+    pub at: SourceSpan,
+}
+
+#[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq, Hash)]
+#[error("Variable `{}` shadowed (no-shadow)", self.name)]
 #[diagnostic()]
 pub struct VariableShadowed {
     pub name: String,
@@ -183,8 +205,8 @@ pub struct VariableShadowed {
     pub at: SourceSpan,
 }
 
-#[derive(Clone, Debug, Error, Diagnostic)]
-#[error("Function `{}()` shadowed", self.name)]
+#[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq, Hash)]
+#[error("Function `{}()` shadowed (no-shadow)", self.name)]
 #[diagnostic()]
 pub struct FunctionShadowed {
     pub name: String,
@@ -242,10 +264,11 @@ fn search_namespace_symbol<'a, 'b, 'c>(
 }
 
 fn bind_expression<'a, 'b>(
+    config: &'a Config,
     expression: &'a Expression,
     scopes_definitions: &'b mut ScopeDefinitions<'a>,
     bindings: &'b mut Bindings<'a>,
-    bind_lint_results: &'b mut Vec<Report>,
+    bind_lint_results: &'b mut Vec<LintError>,
 ) {
     match &expression.kind {
         ExpressionKind::Literal(literal) => match literal {
@@ -257,6 +280,7 @@ fn bind_expression<'a, 'b>(
             crate::ast::Literal::List(elements) => {
                 for element_expr in elements {
                     bind_expression(
+                        config,
                         element_expr,
                         scopes_definitions,
                         bindings,
@@ -266,13 +290,25 @@ fn bind_expression<'a, 'b>(
             }
             crate::ast::Literal::Map(entries) => {
                 for (_, entry_expr) in entries {
-                    bind_expression(entry_expr, scopes_definitions, bindings, bind_lint_results)
+                    bind_expression(
+                        config,
+                        entry_expr,
+                        scopes_definitions,
+                        bindings,
+                        bind_lint_results,
+                    )
                 }
             }
             crate::ast::Literal::Path(args) => {
                 for arg in args {
                     if let PathLiteral::PathExpressionSubstitution(arg_expr) = arg {
-                        bind_expression(arg_expr, scopes_definitions, bindings, bind_lint_results)
+                        bind_expression(
+                            config,
+                            arg_expr,
+                            scopes_definitions,
+                            bindings,
+                            bind_lint_results,
+                        )
                     }
                 }
             }
@@ -281,23 +317,32 @@ fn bind_expression<'a, 'b>(
             if let Some(symbol) = search_variable_symbol(&variable, scopes_definitions) {
                 let _ = bindings.variable_table.insert(&expression.id, symbol);
             } else {
-                bind_lint_results.push(Report::from(VariableNotFound {
-                    name: variable.clone(),
-                    at: expression.get_span().into(),
-                }))
+                bind_lint_results.push(LintError {
+                    report: Report::from(VariableNotFound {
+                        name: variable.clone(),
+                        at: expression.get_span().into(),
+                    }),
+                    span: expression.get_span().into(),
+                })
             }
         }
-        ExpressionKind::UnaryOperation(_, expression) => {
-            bind_expression(&expression, scopes_definitions, bindings, bind_lint_results)
-        }
+        ExpressionKind::UnaryOperation(_, expression) => bind_expression(
+            config,
+            &expression,
+            scopes_definitions,
+            bindings,
+            bind_lint_results,
+        ),
         ExpressionKind::BinaryOperation(_, left_expression, right_expression) => {
             bind_expression(
+                config,
                 &left_expression,
                 scopes_definitions,
                 bindings,
                 bind_lint_results,
             );
             bind_expression(
+                config,
                 &right_expression,
                 scopes_definitions,
                 bindings,
@@ -310,18 +355,21 @@ fn bind_expression<'a, 'b>(
             false_expression,
         ) => {
             bind_expression(
+                config,
                 &condition_expression,
                 scopes_definitions,
                 bindings,
                 bind_lint_results,
             );
             bind_expression(
+                config,
                 &true_expression,
                 scopes_definitions,
                 bindings,
                 bind_lint_results,
             );
             bind_expression(
+                config,
                 &false_expression,
                 scopes_definitions,
                 bindings,
@@ -329,10 +377,17 @@ fn bind_expression<'a, 'b>(
             )
         }
         ExpressionKind::TypeCheckOperation(expression, _type_literal) => {
-            bind_expression(&expression, scopes_definitions, bindings, bind_lint_results);
+            bind_expression(
+                config,
+                &expression,
+                scopes_definitions,
+                bindings,
+                bind_lint_results,
+            );
         }
         ExpressionKind::MemberExpression(object_expression, member_expression) => {
             bind_expression(
+                config,
                 &object_expression,
                 scopes_definitions,
                 bindings,
@@ -354,6 +409,7 @@ fn bind_expression<'a, 'b>(
             {
                 for arg_expression in args_expression {
                     bind_expression(
+                        config,
                         &arg_expression,
                         scopes_definitions,
                         bindings,
@@ -364,12 +420,14 @@ fn bind_expression<'a, 'b>(
         }
         ExpressionKind::SubscriptExpression(object_expression, subscript_expression) => {
             bind_expression(
+                config,
                 &object_expression,
                 scopes_definitions,
                 bindings,
                 bind_lint_results,
             );
             bind_expression(
+                config,
                 &subscript_expression,
                 scopes_definitions,
                 bindings,
@@ -380,13 +438,17 @@ fn bind_expression<'a, 'b>(
             if let Some(symbol) = search_function_symbol(&name, scopes_definitions) {
                 let _ = bindings.function_table.insert(&expression.id, symbol);
             } else {
-                bind_lint_results.push(Report::from(FunctionNotFound {
-                    name: name.clone(),
-                    at: expression.get_span().into(),
-                }))
+                bind_lint_results.push(LintError {
+                    report: Report::from(FunctionNotFound {
+                        name: name.clone(),
+                        at: expression.get_span().into(),
+                    }),
+                    span: expression.get_span().into(),
+                })
             }
             for param_expression in params_expression.iter() {
                 bind_expression(
+                    config,
                     &param_expression,
                     scopes_definitions,
                     bindings,
@@ -398,12 +460,14 @@ fn bind_expression<'a, 'b>(
 }
 
 fn bind_function<'a, 'b>(
+    config: &'a Config,
     function: &'a Function,
     scopes_definitions: &'b mut ScopeDefinitions<'a>,
     bindings: &'b mut Bindings<'a>,
-    bind_lint_results: &'b mut Vec<Report>,
+    bind_lint_results: &'b mut Vec<LintError>,
 ) {
     if let Some(report) = scopes_definitions.insert_function(
+        config,
         &function.name,
         (SymbolID::new(), FunctionNodeRef::Function(function)),
     ) {
@@ -416,17 +480,30 @@ fn bind_function<'a, 'b>(
         namespaces: HashMap::new(),
     };
 
+    let mut pre_args: Vec<&Argument> = vec![];
     for arg in function.arguments.iter() {
+        if let Some(duplicated_pre_arg) = pre_args.iter().find(|pre_arg| pre_arg.name == arg.name) {
+            bind_lint_results.push(LintError {
+                report: Report::from(ArgumentDuplicated {
+                    name: arg.name.clone(),
+                    to: duplicated_pre_arg.get_span().into(),
+                    at: arg.get_span().into(),
+                }),
+                span: arg.get_span().into(),
+            })
+        }
         let _ = definitions.variables.insert(
             &*arg.name,
             (SymbolID::new(), VariableNodeRef::FunctionArgument(arg)),
         );
+        pre_args.push(arg);
     }
 
     scopes_definitions.push(definitions);
 
     for let_binding in function.let_bindings.iter() {
         bind_expression(
+            config,
             &let_binding.expression,
             scopes_definitions,
             bindings,
@@ -434,6 +511,7 @@ fn bind_function<'a, 'b>(
         );
 
         if let Some(report) = scopes_definitions.insert_variable(
+            config,
             &*let_binding.name,
             (SymbolID::new(), VariableNodeRef::LetBinding(let_binding)),
         ) {
@@ -442,6 +520,7 @@ fn bind_function<'a, 'b>(
     }
 
     bind_expression(
+        config,
         &function.return_expression,
         scopes_definitions,
         bindings,
@@ -452,12 +531,14 @@ fn bind_function<'a, 'b>(
 }
 
 fn bind_rule<'a, 'b>(
+    config: &'a Config,
     rule: &'a Rule,
     scopes_definitions: &'b mut ScopeDefinitions<'a>,
     bindings: &'b mut Bindings<'a>,
-    bind_lint_results: &'b mut Vec<Report>,
+    bind_lint_results: &'b mut Vec<LintError>,
 ) {
     bind_expression(
+        config,
         &rule.condition,
         scopes_definitions,
         bindings,
@@ -466,10 +547,11 @@ fn bind_rule<'a, 'b>(
 }
 
 fn bind_rule_group<'a, 'b>(
+    config: &'a Config,
     rule_group: &'a RuleGroup,
     scopes_definitions: &'b mut ScopeDefinitions<'a>,
     bindings: &'b mut Bindings<'a>,
-    bind_lint_results: &'b mut Vec<Report>,
+    bind_lint_results: &'b mut Vec<LintError>,
 ) {
     scopes_definitions.push(Definitions {
         variables: rule_group
@@ -496,25 +578,44 @@ fn bind_rule_group<'a, 'b>(
     });
 
     for function in rule_group.functions.iter() {
-        bind_function(function, scopes_definitions, bindings, bind_lint_results);
+        bind_function(
+            config,
+            function,
+            scopes_definitions,
+            bindings,
+            bind_lint_results,
+        );
     }
 
     for rule in rule_group.rules.iter() {
-        bind_rule(rule, scopes_definitions, bindings, bind_lint_results);
+        bind_rule(
+            config,
+            rule,
+            scopes_definitions,
+            bindings,
+            bind_lint_results,
+        );
     }
 
     for rule_group in rule_group.rule_groups.iter() {
-        bind_rule_group(rule_group, scopes_definitions, bindings, bind_lint_results);
+        bind_rule_group(
+            config,
+            rule_group,
+            scopes_definitions,
+            bindings,
+            bind_lint_results,
+        );
     }
 
     scopes_definitions.pop();
 }
 
 fn bind_service<'a, 'b>(
+    config: &'a Config,
     service: &'a Service,
     scopes_definitions: &'b mut ScopeDefinitions<'a>,
     bindings: &'b mut Bindings<'a>,
-    bind_lint_results: &'b mut Vec<Report>,
+    bind_lint_results: &'b mut Vec<LintError>,
 ) {
     scopes_definitions.push(Definitions {
         variables: HashMap::new(),
@@ -532,35 +633,55 @@ fn bind_service<'a, 'b>(
     });
 
     for function in service.functions.iter() {
-        bind_function(function, scopes_definitions, bindings, bind_lint_results);
+        bind_function(
+            config,
+            function,
+            scopes_definitions,
+            bindings,
+            bind_lint_results,
+        );
     }
 
     for rule_group in service.rule_groups.iter() {
-        bind_rule_group(rule_group, scopes_definitions, bindings, bind_lint_results);
+        bind_rule_group(
+            config,
+            rule_group,
+            scopes_definitions,
+            bindings,
+            bind_lint_results,
+        );
     }
 
     scopes_definitions.pop();
 }
 
 fn bind_rules_tree<'a, 'b>(
+    config: &'a Config,
     rules_tree: &'a RulesTree,
     scopes_definitions: &'b mut ScopeDefinitions<'a>,
     bindings: &'b mut Bindings<'a>,
-    bind_lint_results: &'b mut Vec<Report>,
+    bind_lint_results: &'b mut Vec<LintError>,
 ) {
     for service in rules_tree.services.iter() {
-        bind_service(service, scopes_definitions, bindings, bind_lint_results);
+        bind_service(
+            config,
+            service,
+            scopes_definitions,
+            bindings,
+            bind_lint_results,
+        );
     }
 }
 
 pub fn bind<'a>(
+    config: &'a Config,
     ast: &'a Ast,
     globals: &'a (
         HashMap<&'static str, Ty>,
         HashMap<&'static str, Vec<FunctionInterface>>,
         HashMap<&'static str, HashMap<&'static str, Vec<FunctionInterface>>>,
     ),
-) -> (Bindings<'a>, SymbolReferences<'a>, Vec<Report>) {
+) -> (Bindings<'a>, SymbolReferences<'a>, Vec<LintError>) {
     let mut bindings = Bindings {
         variable_table: HashMap::new(),
         function_table: HashMap::new(),
@@ -624,9 +745,10 @@ pub fn bind<'a>(
             .collect(),
     });
 
-    let mut bind_lint_results = Vec::<Report>::new();
+    let mut bind_lint_results = Vec::<LintError>::new();
 
     bind_rules_tree(
+        config,
         &ast.tree,
         &mut scopes_definitions,
         &mut bindings,

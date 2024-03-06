@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, fmt::Display, hash::Hash, iter::z
 
 use crate::{
     ast::{BinaryLiteral, Node, UnaryLiteral},
-    checker::TypeCheckResult,
+    checker::TypeCheckError,
     orany::OrAny,
 };
 
@@ -471,7 +471,7 @@ pub enum MemberKind {
 
 pub struct FunctionInterface<'a>(
     pub (Vec<TypeKind>, TypeKind),
-    pub Box<dyn Fn(&dyn Node, &Vec<&TypeKind>, &Flow) -> (Ty, Vec<TypeCheckResult>) + 'a>,
+    pub Box<dyn Fn(&dyn Node, &Vec<&TypeKind>, &Flow) -> (Ty, Vec<TypeCheckError>) + 'a>,
 );
 
 impl<'a> std::fmt::Debug for FunctionInterface<'a> {

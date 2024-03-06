@@ -9,31 +9,68 @@ use crate::{
         Ast, BinaryLiteral, Expression, ExpressionKind, Function, Literal, Node, NodeID,
         PathLiteral, Rule, RuleGroup,
     },
+    config::{Config, LintError},
     orany::OrAny,
     symbol::{Bindings, FunctionNodeRef, SymbolReferences, VariableNodeRef},
     ty::{
         Flow, FunctionInterface, FunctionKind, ListLiteral, MapLiteral, MayLiteral, MemberKind, Ty,
         TypeID, TypeKind,
     },
-    Config,
 };
 
 #[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq, Hash)]
-#[error("{reason}")]
+#[error("{}", reason)]
 #[diagnostic()]
-pub struct TypeCheckResult {
+pub struct TypeCheckError {
     pub reason: String,
     #[label]
     pub at: SourceSpan,
 }
 
-impl TypeCheckResult {
-    pub fn new(node: &dyn Node, reason: String) -> Self {
-        TypeCheckResult {
-            reason: reason,
-            at: node.get_span().into(),
+impl Into<LintError> for TypeCheckError {
+    fn into(self) -> LintError {
+        let at = self.at.clone();
+        LintError {
+            report: Report::from(self),
+            span: at,
         }
     }
+}
+
+#[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq, Hash)]
+#[error("field {} already declared (no_dupe_keys)", self.name)]
+#[diagnostic()]
+pub struct KeysDuplicated {
+    pub name: String,
+    #[label("already declared here")]
+    pub to: SourceSpan,
+    #[label("declared here")]
+    pub at: SourceSpan,
+}
+
+#[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq, Hash)]
+#[error("condition always {} (no-unnecessary-condition)", target_boolean)]
+#[diagnostic()]
+pub struct NoUnnecessaryCondition {
+    pub target_boolean: bool,
+    #[label]
+    pub at: SourceSpan,
+}
+
+#[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq, Hash)]
+#[error("You have most likely granted more privileges than necessary. Instead, use `get` and `list` explicitly. (no-read-rule)")]
+#[diagnostic()]
+pub struct NoReadRule {
+    #[label]
+    pub at: SourceSpan,
+}
+
+#[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq, Hash)]
+#[error("You have most likely granted more privileges than necessary. Instead, use `create`, `update` and `delete` explicitly. (no-write-rule)")]
+#[diagnostic()]
+pub struct NoWriteRule {
+    #[label]
+    pub at: SourceSpan,
 }
 
 #[derive(Clone, Debug)]
@@ -51,7 +88,7 @@ fn check_can_be<'a, 'b>(
     to: &'b Ty,
     expr: &'a Expression,
     flow: &'a Flow,
-) -> (OrAny, Vec<TypeCheckResult>) {
+) -> (OrAny, Vec<LintError>) {
     let passed: OrAny = from.can_be(to, flow);
     match passed {
         OrAny::Any => (OrAny::Any, vec![]),
@@ -61,15 +98,16 @@ fn check_can_be<'a, 'b>(
             } else {
                 (
                     OrAny::Bool(false),
-                    vec![TypeCheckResult::new(
-                        expr,
-                        format!(
+                    vec![(TypeCheckError {
+                        reason: format!(
                             "Expect {:?}, Get {:?}",
                             to.expand_for_debug(flow),
                             from.expand_for_debug(flow)
                         )
                         .into(),
-                    )],
+                        at: expr.get_span().into(),
+                    })
+                    .into()],
                 )
             }
         }
@@ -81,7 +119,7 @@ fn check_can_be_candidates<'a, 'b>(
     to_candidates: Vec<Ty>,
     expr: &'a Expression,
     flow: &'a Flow,
-) -> (OrAny, Vec<TypeCheckResult>) {
+) -> (OrAny, Vec<LintError>) {
     let passed: OrAny = OrAny::all(to_candidates.iter(), |to: &Ty| from.can_be(to, flow));
     match passed {
         OrAny::Any => (OrAny::Any, vec![]),
@@ -91,9 +129,8 @@ fn check_can_be_candidates<'a, 'b>(
             } else {
                 (
                     OrAny::Bool(false),
-                    vec![TypeCheckResult::new(
-                        expr,
-                        format!(
+                    vec![(TypeCheckError {
+                        reason: format!(
                             "Expect {:?}, Get {:?}",
                             to_candidates
                                 .iter()
@@ -102,7 +139,9 @@ fn check_can_be_candidates<'a, 'b>(
                             from.expand_for_debug(flow)
                         )
                         .into(),
-                    )],
+                        at: expr.get_span().into(),
+                    })
+                    .into()],
                 )
             }
         }
@@ -117,7 +156,7 @@ fn check_function_args<'a>(
     args: Vec<Ty>,
     flow: &mut Flow,
     function_kind: Option<FunctionKind>,
-) -> (Ty, Vec<TypeCheckResult>) {
+) -> (Ty, Vec<LintError>) {
     if let Some((return_ty, return_result)) =
         functions
             .iter()
@@ -134,13 +173,15 @@ fn check_function_args<'a>(
                 }
             })
     {
-        (return_ty.clone(), return_result)
+        (
+            return_ty.clone(),
+            return_result.into_iter().map(|x| x.into()).collect(),
+        )
     } else {
         (
             Ty::new(TypeKind::Any),
-            vec![TypeCheckResult::new(
-                expr,
-                format!(
+            vec![(TypeCheckError {
+                reason: format!(
                     "function or operator {}({}) type mismatch. expect {}, get {:?}",
                     name,
                     base_ty
@@ -154,8 +195,11 @@ fn check_function_args<'a>(
                     args.iter()
                         .map(|ty| ty.expand_for_debug(flow))
                         .collect::<Vec<TypeKind>>()
-                ),
-            )],
+                )
+                .into(),
+                at: expr.get_span().into(),
+            })
+            .into()],
         )
     }
 }
@@ -167,7 +211,7 @@ fn check_interface_function_calling<'a>(
     function_kind: FunctionKind,
     args: Vec<Ty>,
     flow: &mut Flow,
-) -> (Ty, Vec<TypeCheckResult>) {
+) -> (Ty, Vec<LintError>) {
     if interface_ty.kind(flow).is_any() {
         if function_kind == FunctionKind::BinaryOp(BinaryLiteral::Eq) {
             return (Ty::new(TypeKind::Boolean(MayLiteral::Unknown)), vec![]);
@@ -206,13 +250,15 @@ fn check_interface_function_calling<'a>(
     if functions.len() == 0 {
         (
             Ty::new(TypeKind::Any),
-            vec![TypeCheckResult::new(
-                node,
-                format!(
+            vec![(TypeCheckError {
+                reason: format!(
                     "function {} not found for the type `{:?}`",
                     function_kind, interface_ty
-                ),
-            )],
+                )
+                .into(),
+                at: node.get_span().into(),
+            })
+            .into()],
         )
     } else {
         check_function_args(
@@ -235,21 +281,24 @@ fn check_function<'a, 'b, 'c>(
     variable_type_bindings: &'c VariableTypeBindings,
     flow: &'c mut Flow,
     request_resource_data_ty_id: &TypeID,
-) -> (Ty, Vec<TypeCheckResult>) {
-    let mut res: Vec<TypeCheckResult> = vec![];
+) -> (Ty, Vec<LintError>) {
+    let mut res: Vec<LintError> = vec![];
     let mut variable_type_bindings = variable_type_bindings.clone();
 
     // args
     if function.arguments.len() != params.len() {
-        res.push(TypeCheckResult::new(
-            caller,
-            format!(
-                "params length not matched. expect {} but get {}",
-                function.arguments.len(),
-                params.len()
-            )
+        res.push(
+            (TypeCheckError {
+                reason: format!(
+                    "params length not matched. expect {} but get {}",
+                    function.arguments.len(),
+                    params.len()
+                )
+                .into(),
+                at: caller.get_span().into(),
+            })
             .into(),
-        ))
+        )
     }
     for (arg, param) in zip(&function.arguments, params) {
         variable_type_bindings.insert(&arg.id, param.clone());
@@ -287,22 +336,52 @@ fn check_expression<'a, 'b>(
     variable_type_bindings: &'b VariableTypeBindings,
     flow: &'b mut Flow,
     request_resource_data_ty_id: &TypeID,
-) -> (Ty, Vec<TypeCheckResult>) {
-    let (ty, err) = check_expression_inner(
+) -> (Ty, Vec<LintError>) {
+    let (ty, mut err) = check_expression_inner(
         expr,
         context,
         variable_type_bindings,
         flow,
         request_resource_data_ty_id,
     );
+    if context.config.rules.no_unnecessary_condition {
+        if let ExpressionKind::Literal(Literal::Bool(_)) = expr.kind {
+            // boolean literal
+        } else {
+            if let OrAny::Bool(true) = ty.can_be(
+                &Ty::new(TypeKind::Boolean(MayLiteral::Literal(true))),
+                &flow,
+            ) {
+                err.push(LintError {
+                    report: Report::from(NoUnnecessaryCondition {
+                        target_boolean: true,
+                        at: expr.get_span().into(),
+                    }),
+                    span: expr.get_span().into(),
+                })
+            }
+            if let OrAny::Bool(true) = ty.can_be(
+                &Ty::new(TypeKind::Boolean(MayLiteral::Literal(false))),
+                &flow,
+            ) {
+                err.push(LintError {
+                    report: Report::from(NoUnnecessaryCondition {
+                        target_boolean: false,
+                        at: expr.get_span().into(),
+                    }),
+                    span: expr.get_span().into(),
+                })
+            }
+        }
+    }
     debug!(
         "{:?} {:?}",
         ty.expand_for_debug(flow),
-        (Report::from(TypeCheckResult {
+        Report::from(TypeCheckError {
             reason: "Expression".to_owned(),
-            at: expr.get_span().into()
+            at: expr.get_span().into(),
         })
-        .with_source_code(context.source_code.clone()))
+        .with_source_code(context.source_code.clone())
     );
     (ty, err)
 }
@@ -313,7 +392,7 @@ fn check_expression_inner<'a, 'b>(
     variable_type_bindings: &'b VariableTypeBindings,
     flow: &'b mut Flow,
     request_resource_data_ty_id: &TypeID,
-) -> (Ty, Vec<TypeCheckResult>) {
+) -> (Ty, Vec<LintError>) {
     match &expr.kind {
         ExpressionKind::Literal(Literal::Bool(b)) => {
             (Ty::new(TypeKind::Boolean(MayLiteral::Literal(*b))), vec![])
@@ -351,6 +430,27 @@ fn check_expression_inner<'a, 'b>(
             )
         }
         ExpressionKind::Literal(Literal::Map(entries)) => {
+            let mut lint_errors = vec![];
+
+            if context.config.rules.no_dupe_keys {
+                let mut pre_entries: Vec<&(String, Expression)> = vec![];
+                for entry in entries.iter() {
+                    if let Some(duplicated_pre_entry) =
+                        pre_entries.iter().find(|pre_entry| pre_entry.0 == entry.0)
+                    {
+                        lint_errors.push(LintError {
+                            report: Report::from(KeysDuplicated {
+                                name: entry.0.clone(),
+                                to: duplicated_pre_entry.1.get_span().into(),
+                                at: entry.1.get_span().into(),
+                            }),
+                            span: entry.1.get_span().into(),
+                        })
+                    }
+                    pre_entries.push(entry);
+                }
+            }
+
             let (entries_type, entries_result) = entries
                 .iter()
                 .map(|(key, value)| {
@@ -366,10 +466,16 @@ fn check_expression_inner<'a, 'b>(
                     )
                 })
                 .fold(
-                    (HashMap::new(), Vec::<TypeCheckResult>::new()),
+                    (HashMap::new(), Vec::<LintError>::new()),
                     |(mut entries_type, entries_result), (key, (value_ty, value_result))| {
                         entries_type.insert(key.clone(), value_ty);
-                        (entries_type, [entries_result, value_result].concat())
+                        (
+                            entries_type,
+                            entries_result
+                                .into_iter()
+                                .chain(value_result.into_iter().map(|x| x.into()))
+                                .collect(),
+                        )
                     },
                 );
             (
@@ -377,11 +483,14 @@ fn check_expression_inner<'a, 'b>(
                     literals: entries_type,
                     default: None,
                 }))),
-                entries_result,
+                lint_errors
+                    .into_iter()
+                    .chain(entries_result.into_iter())
+                    .collect(),
             )
         }
         ExpressionKind::Literal(Literal::Path(args)) => {
-            let mut result: Vec<TypeCheckResult> = vec![];
+            let mut result: Vec<LintError> = vec![];
             let ty = args.iter().fold(
                 Result::Ok(MayLiteral::Literal("".to_owned())),
                 |mut acc: Result<MayLiteral<String>, Vec<String>>, arg| match arg {
@@ -482,7 +591,10 @@ fn check_expression_inner<'a, 'b>(
                 vec![],
                 flow,
             );
-            (return_ty, [op_res, return_res].concat())
+            (
+                return_ty,
+                op_res.into_iter().chain(return_res.into_iter()).collect(),
+            )
         }
         ExpressionKind::BinaryOperation(literal, left_expr, right_expr) => {
             let (left_ty, left_res) = check_expression(
@@ -507,7 +619,13 @@ fn check_expression_inner<'a, 'b>(
                 vec![right_ty],
                 flow,
             );
-            (return_ty, [left_res, right_res, return_res].concat())
+            (
+                return_ty,
+                left_res
+                    .into_iter()
+                    .chain(right_res.into_iter().chain(return_res.into_iter()))
+                    .collect(),
+            )
         }
         ExpressionKind::TernaryOperation(cond_expr, true_expr, false_expr) => {
             let (cond_ty, mut cond_res) = check_expression(
@@ -539,7 +657,13 @@ fn check_expression_inner<'a, 'b>(
                 request_resource_data_ty_id,
             );
             let result_ty = Ty::max(&true_ty, &false_ty, flow);
-            (result_ty, [cond_res, true_res, false_res].concat())
+            (
+                result_ty,
+                cond_res
+                    .into_iter()
+                    .chain(true_res.into_iter().chain(false_res.into_iter()))
+                    .collect(),
+            )
         }
         ExpressionKind::TypeCheckOperation(target_expr, type_str) => {
             let type_str_ty_candidates = match &**type_str {
@@ -571,7 +695,7 @@ fn check_expression_inner<'a, 'b>(
 
             (
                 Ty::new(TypeKind::make_bool_ty(bool_ty)),
-                [res_1, res_2].concat(),
+                res_1.into_iter().chain(res_2.into_iter()).collect(),
             )
         }
         ExpressionKind::MemberExpression(obj_expr, member_expr) => {
@@ -632,23 +756,26 @@ fn check_expression_inner<'a, 'b>(
                         }
                     }
 
-                    res.push(TypeCheckResult::new(
-                        &**member_expr,
-                        format!(
-                            "member not found.
+                    res.push(
+                        (TypeCheckError {
+                            reason: format!(
+                                "member not found.
 
 type: {:?}
 
 got: `.{}`",
-                            obj_ty.expand_for_debug(flow),
-                            // TODO
-                            // interfaces
-                            //     .iter()
-                            //     .map(|interface| &interface.members)
-                            //     .collect::<Vec<&HashMap<MemberKind, Ty>>>(),
-                            variable_name,
-                        ),
-                    ));
+                                obj_ty.expand_for_debug(flow),
+                                // TODO
+                                // interfaces
+                                //     .iter()
+                                //     .map(|interface| &interface.members)
+                                //     .collect::<Vec<&HashMap<MemberKind, Ty>>>(),
+                                variable_name,
+                            ),
+                            at: member_expr.get_span().into(),
+                        })
+                        .into(),
+                    );
                     return (Ty::new(TypeKind::Any), res);
                 }
                 ExpressionKind::FunctionCallExpression(fn_name, fn_params_expr) => {
@@ -668,13 +795,14 @@ got: `.{}`",
                     if function_candidates.len() == 0 {
                         return (
                             Ty::new(TypeKind::Any),
-                            vec![TypeCheckResult::new(
-                                expr,
-                                format!(
+                            vec![(TypeCheckError {
+                                reason: format!(
                                     "function `{}()` not found for the type `{:?}`",
                                     fn_name, obj_ty
                                 ),
-                            )],
+                                at: expr.get_span().into(),
+                            })
+                            .into()],
                         );
                     }
                     let (params_ty, params_res) = fn_params_expr
@@ -688,11 +816,17 @@ got: `.{}`",
                                 request_resource_data_ty_id,
                             )
                         })
-                        .fold::<(Vec<Ty>, Vec<TypeCheckResult>), _>(
+                        .fold::<(Vec<Ty>, Vec<LintError>), _>(
                             (vec![], vec![]),
                             |(mut acc_ty_list, acc_res_list), (param_ty, param_res)| {
                                 acc_ty_list.push(param_ty);
-                                (acc_ty_list, [acc_res_list, param_res].concat())
+                                (
+                                    acc_ty_list,
+                                    acc_res_list
+                                        .into_iter()
+                                        .chain(param_res.into_iter())
+                                        .collect(),
+                                )
                             },
                         );
                     let (return_ty, return_res) = check_function_args(
@@ -704,13 +838,22 @@ got: `.{}`",
                         flow,
                         None,
                     );
-                    return (return_ty, [res, params_res, return_res].concat());
+                    return (
+                        return_ty,
+                        params_res
+                            .into_iter()
+                            .chain(return_res.into_iter())
+                            .collect(),
+                    );
                 }
                 _ => {
-                    res.push(TypeCheckResult::new(
-                        &**member_expr,
-                        "map member must identifier".into(),
-                    ));
+                    res.push(
+                        (TypeCheckError {
+                            reason: "map member must identifier".into(),
+                            at: member_expr.get_span().into(),
+                        })
+                        .into(),
+                    );
                     return (Ty::new(TypeKind::Any), res);
                 }
             };
@@ -738,7 +881,13 @@ got: `.{}`",
                 vec![subscript_ty],
                 flow,
             );
-            (return_ty, [obj_res, subscript_res, return_res].concat())
+            (
+                return_ty,
+                obj_res
+                    .into_iter()
+                    .chain(subscript_res.into_iter().chain(return_res.into_iter()))
+                    .collect(),
+            )
         }
         ExpressionKind::FunctionCallExpression(fn_name, params_expr) => {
             let (params_ty, params_res) = params_expr
@@ -755,11 +904,17 @@ got: `.{}`",
                         ),
                     )
                 })
-                .fold::<(Vec<Ty>, Vec<TypeCheckResult>), _>(
+                .fold::<(Vec<Ty>, Vec<LintError>), _>(
                     (vec![], vec![]),
                     |(mut acc_ty_list, acc_res_list), (_param_expr, (param_ty, param_res))| {
                         acc_ty_list.push(param_ty);
-                        (acc_ty_list, [acc_res_list, param_res].concat())
+                        (
+                            acc_ty_list,
+                            acc_res_list
+                                .into_iter()
+                                .chain(param_res.into_iter())
+                                .collect(),
+                        )
                     },
                 );
 
@@ -779,7 +934,13 @@ got: `.{}`",
                         flow,
                         request_resource_data_ty_id,
                     );
-                    (return_ty, [params_res, return_res].concat())
+                    (
+                        return_ty,
+                        params_res
+                            .into_iter()
+                            .chain(return_res.into_iter())
+                            .collect(),
+                    )
                 }
                 Some(FunctionNodeRef::GlobalFunction(_, _, function_ty_candidates)) => {
                     let (return_ty, return_res) = check_function_args(
@@ -791,7 +952,13 @@ got: `.{}`",
                         flow,
                         None,
                     );
-                    (return_ty, [params_res, return_res].concat())
+                    (
+                        return_ty,
+                        params_res
+                            .into_iter()
+                            .chain(return_res.into_iter())
+                            .collect(),
+                    )
                 }
                 None => (Ty::new(TypeKind::Any), vec![]),
             }
@@ -804,19 +971,39 @@ fn check_rule<'a, 'b>(
     context: &'a TypeCheckContext<'a>,
     flow: &Flow,
     request_resource_data_ty_id: &TypeID,
-) -> Vec<TypeCheckResult> {
+) -> Vec<LintError> {
     let variable_type_bindings = HashMap::new();
 
     let mut result = vec![];
 
     info!(
         "begin check rule {:?}",
-        Report::from(TypeCheckResult {
+        Report::from(TypeCheckError {
             reason: "rule".to_owned(),
             at: rule.get_span().into()
         })
         .with_source_code(context.source_code.clone())
     );
+
+    if context.config.rules.no_read_rule && rule.permissions.contains(&crate::ast::Permission::Read)
+    {
+        result.push(LintError {
+            report: Report::from(NoReadRule {
+                at: (&rule.span).into(),
+            }),
+            span: (&rule.span).into(),
+        })
+    }
+    if context.config.rules.no_write_rule
+        && rule.permissions.contains(&crate::ast::Permission::Write)
+    {
+        result.push(LintError {
+            report: Report::from(NoWriteRule {
+                at: (&rule.span).into(),
+            }),
+            span: (&rule.span).into(),
+        })
+    }
 
     let mut flow = flow.clone();
     let (ty, iter_result) = check_expression(
@@ -837,34 +1024,6 @@ fn check_rule<'a, 'b>(
     );
     result.extend(res);
 
-    // check condition is always ture/false
-    if let Expression {
-        id: _,
-        span: _,
-        kind: ExpressionKind::Literal(Literal::Bool(_)),
-    } = rule.condition
-    {
-    } else {
-        if let OrAny::Bool(true) = ty.can_be(
-            &Ty::new(TypeKind::Boolean(MayLiteral::Literal(true))),
-            &flow,
-        ) {
-            result.push(TypeCheckResult {
-                reason: format!("always true"),
-                at: rule.condition.get_span().into(),
-            })
-        }
-        if let OrAny::Bool(true) = ty.can_be(
-            &Ty::new(TypeKind::Boolean(MayLiteral::Literal(false))),
-            &flow,
-        ) {
-            result.push(TypeCheckResult {
-                reason: format!("always false"),
-                at: rule.condition.get_span().into(),
-            })
-        }
-    }
-
     result
 }
 
@@ -873,7 +1032,7 @@ fn check_rule_group<'a, 'b>(
     context: &'a TypeCheckContext<'a>,
     flow: &Flow,
     request_resource_data_ty_id: &TypeID,
-) -> Vec<TypeCheckResult> {
+) -> Vec<LintError> {
     rule_group
         .rules
         .iter()
@@ -896,7 +1055,7 @@ pub fn check<'a>(
     context: &'a TypeCheckContext<'a>,
     flow: &Flow,
     request_resource_data_ty_id: &TypeID,
-) -> Vec<TypeCheckResult> {
+) -> Vec<LintError> {
     ast.tree
         .services
         .iter()

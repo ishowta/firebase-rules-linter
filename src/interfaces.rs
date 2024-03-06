@@ -3,7 +3,7 @@ use std::{collections::HashMap, iter::zip};
 
 use crate::{
     ast::{BinaryLiteral, UnaryLiteral},
-    checker::TypeCheckResult,
+    checker::TypeCheckError,
     orany::OrAny,
     ty::{
         FunctionInterface, FunctionKind, Interface, ListLiteral, MapLiteral, MayLiteral::*,
@@ -627,7 +627,7 @@ impl TypeKind {
                                             (
                                                 Ty::new(TypeKind::List(Unknown)),
                                                 vec![
-                                                    (TypeCheckResult {
+                                                    (TypeCheckError {
                                                         reason: "index out of range".to_owned(),
                                                         at: node.get_span().into(),
                                                     }),
@@ -638,7 +638,7 @@ impl TypeKind {
                                         (
                                             Ty::new(TypeKind::List(Unknown)),
                                             vec![
-                                                (TypeCheckResult {
+                                                (TypeCheckError {
                                                     reason: "index must be unsigned integer"
                                                         .to_owned(),
                                                     at: node.get_span().into(),
@@ -670,7 +670,7 @@ impl TypeKind {
                                 ) if *index < 0 => (
                                     Ty::new(TypeKind::List(Unknown)),
                                     vec![
-                                        (TypeCheckResult {
+                                        (TypeCheckError {
                                             reason: "range index must be unsigned integer"
                                                 .to_owned(),
                                             at: node.get_span().into(),
@@ -683,7 +683,7 @@ impl TypeKind {
                                 ) if to <= from => (
                                     Ty::new(TypeKind::List(Unknown)),
                                     vec![
-                                        (TypeCheckResult {
+                                        (TypeCheckError {
                                             reason: "invalid range".to_owned(),
                                             at: node.get_span().into(),
                                         }),
@@ -701,7 +701,7 @@ impl TypeKind {
                                         (
                                             Ty::new(TypeKind::List(Unknown)),
                                             vec![
-                                                (TypeCheckResult {
+                                                (TypeCheckError {
                                                     reason: "index out of range".to_owned(),
                                                     at: node.get_span().into(),
                                                 }),
@@ -847,7 +847,7 @@ impl TypeKind {
                                             None => (
                                                 Ty::new(TypeKind::Any),
                                                 vec![
-                                                    (TypeCheckResult {
+                                                    (TypeCheckError {
                                                         reason: format!("field not exist. expect {:?}, got {:?}", left.literals.keys(), key),
                                                         at: node.get_span().into(),
                                                     }),
@@ -1124,7 +1124,7 @@ impl TypeKind {
                                             (
                                                 Ty::new(TypeKind::String(Unknown)),
                                                 vec![
-                                                    (TypeCheckResult {
+                                                    (TypeCheckError {
                                                         reason: "index out of range".to_owned(),
                                                         at: node.get_span().into(),
                                                     }),
@@ -1135,7 +1135,7 @@ impl TypeKind {
                                         (
                                             Ty::new(TypeKind::String(Unknown)),
                                             vec![
-                                                (TypeCheckResult {
+                                                (TypeCheckError {
                                                     reason: "index must be unsigned integer"
                                                         .to_owned(),
                                                     at: node.get_span().into(),
@@ -1173,7 +1173,7 @@ impl TypeKind {
                                 (
                                     Ty::new(TypeKind::PathTemplateBound(Unknown)),
                                     vec![
-                                        (TypeCheckResult {
+                                        (TypeCheckError {
                                             reason: "key not found".to_owned(),
                                             at: node.get_span().into(),
                                         }),
@@ -1243,7 +1243,7 @@ impl TypeKind {
                                         (
                                             Ty::new(TypeKind::Any),
                                             vec![
-                                                (TypeCheckResult {
+                                                (TypeCheckError {
                                                     reason: "field not exist".to_owned(),
                                                     at: node.get_span().into(),
                                                 }),
@@ -1264,7 +1264,7 @@ impl TypeKind {
                                                 (
                                                     Ty::new(TypeKind::String(Unknown)),
                                                     vec![
-                                                        (TypeCheckResult {
+                                                        (TypeCheckError {
                                                             reason: "index out of range".to_owned(),
                                                             at: node.get_span().into(),
                                                         }),
@@ -1275,7 +1275,7 @@ impl TypeKind {
                                             (
                                                 Ty::new(TypeKind::String(Unknown)),
                                                 vec![
-                                                    (TypeCheckResult {
+                                                    (TypeCheckError {
                                                         reason: "index must be unsigned integer"
                                                             .to_owned(),
                                                         at: node.get_span().into(),
@@ -1551,7 +1551,7 @@ impl TypeKind {
                                             (
                                                 Ty::new(TypeKind::String(Unknown)),
                                                 vec![
-                                                    (TypeCheckResult {
+                                                    (TypeCheckError {
                                                         reason: "index out of range".to_owned(),
                                                         at: node.get_span().into(),
                                                     }),
@@ -1562,7 +1562,7 @@ impl TypeKind {
                                         (
                                             Ty::new(TypeKind::String(Unknown)),
                                             vec![
-                                                (TypeCheckResult {
+                                                (TypeCheckError {
                                                     reason: "index must be unsigned integer"
                                                         .to_owned(),
                                                     at: node.get_span().into(),
@@ -1593,7 +1593,7 @@ impl TypeKind {
                                 ) if *index < 0 => (
                                     Ty::new(TypeKind::String(Unknown)),
                                     vec![
-                                        (TypeCheckResult {
+                                        (TypeCheckError {
                                             reason: "range index must be unsigned integer"
                                                 .to_owned(),
                                             at: node.get_span().into(),
@@ -1606,7 +1606,7 @@ impl TypeKind {
                                 ) if to <= from => (
                                     Ty::new(TypeKind::String(Unknown)),
                                     vec![
-                                        (TypeCheckResult {
+                                        (TypeCheckError {
                                             reason: "invalid range".to_owned(),
                                             at: node.get_span().into(),
                                         }),
@@ -1626,7 +1626,7 @@ impl TypeKind {
                                         (
                                             Ty::new(TypeKind::String(Unknown)),
                                             vec![
-                                                (TypeCheckResult {
+                                                (TypeCheckError {
                                                     reason: "index out of range".to_owned(),
                                                     at: node.get_span().into(),
                                                 }),

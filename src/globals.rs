@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::NaiveDate;
 
 use crate::{
-    checker::TypeCheckResult,
+    checker::TypeCheckError,
     ty::{Flow, FunctionInterface, ListLiteral, MapLiteral, MayLiteral::*, Ty, TypeID, TypeKind},
 };
 
@@ -610,13 +610,13 @@ pub fn get_globals() -> (
                                             if NaiveDate::from_ymd_opt(year, month, day).is_some() {
                                                 vec![]
                                             } else {
-                                                vec![TypeCheckResult {
+                                                vec![TypeCheckError {
                                                     reason: "invalid date".to_owned(),
                                                     at: node.get_span().into(),
                                                 }]
                                             }
                                         } else {
-                                            vec![TypeCheckResult {
+                                            vec![TypeCheckError {
                                                 reason: "invalid date".to_owned(),
                                                 at: node.get_span().into(),
                                             }]
