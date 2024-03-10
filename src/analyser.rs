@@ -235,7 +235,10 @@ async fn check_rule<'a>(
                         "unexpected field detected (unexpected-field)"
                     };
                     errors.push(AnalysysResult::Error(AnalysysError::new(
-                        format!("{}\n\n{}", message, example_as_json),
+                        format!(
+                            "{}\n\nExample over 1MB input data:\n{}",
+                            message, example_as_json
+                        ),
                         rule,
                     )));
                     info!("detected");

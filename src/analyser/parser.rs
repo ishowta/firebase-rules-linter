@@ -67,7 +67,6 @@ fn parse_name(term: &Term) -> &String {
 }
 
 fn parse_unsigned_int(term: &Term) -> usize {
-    println!("{:#?}", term);
     match term {
         Term::Constant(Constant::Numeral(value)) => value.try_into().unwrap(),
         Term::Application {
@@ -88,7 +87,6 @@ fn parse_unsigned_int(term: &Term) -> usize {
 }
 
 fn parse_signed_int(term: &Term) -> isize {
-    println!("{:#?}", term);
     match term {
         Term::Constant(Constant::Numeral(value)) => value.try_into().unwrap(),
         Term::Application {
