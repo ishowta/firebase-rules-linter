@@ -41,7 +41,7 @@ pub enum Feature {
 #[derive(Parser)]
 #[command(version, about)]
 struct Args {
-    #[arg(short, long = "input")]
+    #[arg()]
     input_path: String,
 
     #[arg(short, long = "config", default_value = ".ruleslintrc.json")]

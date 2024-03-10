@@ -52,9 +52,13 @@ pub fn destruct_bytes(
         dest_value.clone(),
         dest_bytes_sym.clone(),
         Constraint::new2(
-            "=",
-            refl_sym,
-            &Constraint::new2("bytes", &dest_value, &dest_bytes_sym),
+            "and",
+            &Constraint::new2(">=", &dest_bytes_sym, &0),
+            &Constraint::new2(
+                "=",
+                refl_sym,
+                &Constraint::new2("bytes", &dest_value, &dest_bytes_sym),
+            ),
         ),
     )
 }
@@ -88,9 +92,13 @@ pub fn destruct_list(
         dest_value.clone(),
         dest_bytes_sym.clone(),
         Constraint::new2(
-            "=",
-            refl_sym,
-            &Constraint::new2("list", &dest_value, &dest_bytes_sym),
+            "and",
+            &Constraint::new2(">=", &dest_bytes_sym, &0),
+            &Constraint::new2(
+                "=",
+                refl_sym,
+                &Constraint::new2("list", &dest_value, &dest_bytes_sym),
+            ),
         ),
     )
 }
@@ -144,9 +152,13 @@ pub fn destruct_set(
         dest_value.clone(),
         dest_bytes_sym.clone(),
         Constraint::new2(
-            "=",
-            refl_sym,
-            &Constraint::new2("set", &dest_value, &dest_bytes_sym),
+            "and",
+            &Constraint::new2(">=", &dest_bytes_sym, &0),
+            &Constraint::new2(
+                "=",
+                refl_sym,
+                &Constraint::new2("set", &dest_value, &dest_bytes_sym),
+            ),
         ),
     )
 }
@@ -164,9 +176,13 @@ pub fn destruct_string(
         dest_value.clone(),
         dest_bytes_sym.clone(),
         Constraint::new2(
-            "=",
-            refl_sym,
-            &Constraint::new2("str", &dest_value, &dest_bytes_sym),
+            "and",
+            &Constraint::new2(">=", &dest_bytes_sym, &0),
+            &Constraint::new2(
+                "=",
+                refl_sym,
+                &Constraint::new2("str", &dest_value, &dest_bytes_sym),
+            ),
         ),
     )
 }

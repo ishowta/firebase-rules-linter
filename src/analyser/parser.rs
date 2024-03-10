@@ -66,9 +66,10 @@ fn parse_name(term: &Term) -> &String {
     }
 }
 
-fn parse_int(term: &Term) -> usize {
+fn parse_unsigned_int(term: &Term) -> usize {
+    println!("{:#?}", term);
     match term {
-        Term::Constant(Constant::Numeral(bytes_length)) => bytes_length.try_into().unwrap(),
+        Term::Constant(Constant::Numeral(value)) => value.try_into().unwrap(),
         Term::Application {
             qual_identifier:
                 QualIdentifier::Simple {
@@ -79,9 +80,40 @@ fn parse_int(term: &Term) -> usize {
                 },
             arguments,
         } if name == "int" => match &arguments[0] {
-            Term::Constant(Constant::Numeral(bytes_length)) => bytes_length.try_into().unwrap(),
+            Term::Constant(Constant::Numeral(value)) => value.try_into().unwrap(),
             _ => panic!(),
         },
+        _ => panic!(),
+    }
+}
+
+fn parse_signed_int(term: &Term) -> isize {
+    println!("{:#?}", term);
+    match term {
+        Term::Constant(Constant::Numeral(value)) => value.try_into().unwrap(),
+        Term::Application {
+            qual_identifier:
+                QualIdentifier::Simple {
+                    identifier:
+                        Identifier::Simple {
+                            symbol: Symbol(name),
+                        },
+                },
+            arguments,
+        } if name == "int" => match &arguments[0] {
+            Term::Constant(Constant::Numeral(value)) => value.try_into().unwrap(),
+            _ => panic!(),
+        },
+        Term::Application {
+            qual_identifier:
+                QualIdentifier::Simple {
+                    identifier:
+                        Identifier::Simple {
+                            symbol: Symbol(name),
+                        },
+                },
+            arguments,
+        } if name == "-" => -parse_signed_int(&arguments[0]),
         _ => panic!(),
     }
 }
@@ -165,12 +197,12 @@ fn parse_smt2_term(context: &mut Context, term: &Term) -> Value {
                     Value::Bool(value == "true")
                 }
                 "int" => {
-                    let value = parse_int(&arguments[0]);
+                    let value = parse_signed_int(&arguments[0]);
                     Value::Number(Number::from(value))
                 }
                 "str" => {
                     let value = parse_name(&arguments[0]);
-                    let byte_length = parse_int(&arguments[1]);
+                    let byte_length = parse_unsigned_int(&arguments[1]);
                     if value.len() == byte_length {
                         Value::String(value.clone())
                     } else {
@@ -180,7 +212,7 @@ fn parse_smt2_term(context: &mut Context, term: &Term) -> Value {
                 "bytes" => Value::String("[any]".to_owned()),
                 "list" => {
                     let value = parse_smt2_term(context, &arguments[0]);
-                    let byte_length = parse_int(&arguments[1]);
+                    let byte_length = parse_unsigned_int(&arguments[1]);
                     if let Value::Array(items) = &value {
                         if items.len() == byte_length {
                             value.clone()
