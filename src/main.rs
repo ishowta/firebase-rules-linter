@@ -128,7 +128,13 @@ fn main() {
 
         let analyse_result = analyze(&analysys_global_context, &ast);
 
-        error_count += analyse_result.len();
+        error_count += analyse_result
+            .iter()
+            .filter(|result| match result {
+                AnalysysResult::Error(_) => true,
+                AnalysysResult::Warning(_) => false,
+            })
+            .count();
 
         for result in analyse_result.iter().map(|x| match x.clone() {
             AnalysysResult::Error(x) => Report::from(x),

@@ -228,7 +228,7 @@ async fn check_rule<'a>(
                     let example_as_json =
                         to_string_pretty(&parse_smt2_result(example.clone())).unwrap();
                     let message = if global_ctx.config.rules.insufficient_upper_size_limit {
-                        "1MB detected (insufficient-upper-size-limit)"
+                        "Perhaps there is insufficient validation of the document size limit. (insufficient-upper-size-limit)"
                     } else if global_ctx.config.rules.untyped_field {
                         "untyped field detected (untyped-field)"
                     } else {
@@ -250,7 +250,7 @@ async fn check_rule<'a>(
                 SolverResult::Unknown | SolverResult::Timeout => {
                     info!("timeout, skip");
                     errors.push(AnalysysResult::Warning(AnalysysWarning::new(
-                        format!("Static analysis failed because this conditions are too complex."),
+                        format!("Static analysis timeout because this conditions are too complex."),
                         rule,
                     )))
                 }
