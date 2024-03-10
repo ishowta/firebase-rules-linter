@@ -74,6 +74,7 @@ pub async fn solve(source: &String, config: &Config) -> SolverResult {
 {}
 
 ;(apply (then (repeat (then simplify solve-eqs (or-else split-clause skip) dom-simplify))))
+;(check-sat)
 (check-sat-using (then (repeat (then simplify solve-eqs (or-else split-clause skip) dom-simplify)) smt))
 ;(get-model)
 (eval request_resource_data_inner)

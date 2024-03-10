@@ -34,8 +34,10 @@ cargo run -- ./firestore.rules --config ./.ruleslintrc.json
     "no-write-rule": true,
     "unexpected-field": true,
     "untyped-field": true,
-    "insufficient-upper-size-limit": true
-  }
+    "insufficient-upper-size-limit": false
+  },
+  "analysis_rule_timeout_sec": 5,
+  "use_lite_smt_lib": false
 }
 ```
 
@@ -294,6 +296,8 @@ service cloud.firestore {
 
 ### unexpected_field
 
+! If `insufficient-upper-size-limit` or `untyped-field` rule is enabled, this rule error will be displayed as the error.
+
 ❌ Incorrect Example:
 
 ```rules
@@ -302,11 +306,11 @@ rules_version = "2";
 service cloud.firestore {
   match /databases/{database}/documents {
     function validateUser(data){
-      return "name" in data && data.name is string && data.name.size() <= 100
+      return "age" in data && data.age is int;
     }
 
     match /users/{user_id} {
-      allow update: if validateUser(request.resource.data); // Error
+      allow update: if validateUser(request.resource.data);
     }
   }
 }
@@ -320,8 +324,8 @@ rules_version = "2";
 service cloud.firestore {
   match /databases/{database}/documents {
     function validateUser(data){
-      return data.keys().hasOnly(["name"])
-        && "name" in data && data.name is string && data.name.size() <= 100
+      return data.keys().hasOnly(["age"])
+        && "age" in data && data.age is int;
     }
 
     match /users/{user_id} {
@@ -333,6 +337,8 @@ service cloud.firestore {
 
 ### untyped_field
 
+! If `insufficient-upper-size-limit` rule is enabled, this rule error will be displayed as the error.
+
 ❌ Incorrect Example:
 
 ```rules
@@ -341,7 +347,7 @@ rules_version = "2";
 service cloud.firestore {
   match /databases/{database}/documents {
     function validateUser(data){
-      return data.keys() == ["name"]
+      return data.keys() == ["age"];
     }
 
     match /users/{user_id} {
@@ -359,8 +365,8 @@ rules_version = "2";
 service cloud.firestore {
   match /databases/{database}/documents {
     function validateUser(data){
-      return data.keys().hasOnly(["name"])
-        && "name" in data && data.name is string && data.name.size() <= 100
+      return data.keys().hasOnly(["age"])
+        && "age" in data && data.age is int;
     }
 
     match /users/{user_id} {
@@ -371,6 +377,8 @@ service cloud.firestore {
 ```
 
 ### insufficient_upper_size_limit
+
+! Currently, this feature is turned off by default due to a high rate of timeouts.
 
 ❌ Incorrect Example:
 

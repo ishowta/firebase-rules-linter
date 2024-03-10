@@ -64,7 +64,11 @@ async fn check_rule<'a>(
             quick_mode: false,
             variable_bindings: &HashMap::new(),
             declarations: &RefCell::new(vec![Declaration {
-                smtlib2: include_str!("analyser/lib.smt2").to_owned(),
+                smtlib2: if global_ctx.config.use_lite_smt_lib {
+                    include_str!("analyser/lib-lite.smt2").to_owned()
+                } else {
+                    include_str!("analyser/lib.smt2").to_owned()
+                },
             }]),
         };
 
@@ -149,7 +153,11 @@ async fn check_rule<'a>(
                 quick_mode: true,
                 variable_bindings: &HashMap::new(),
                 declarations: &RefCell::new(vec![Declaration {
-                    smtlib2: include_str!("analyser/lib.smt2").to_owned(),
+                    smtlib2: if global_ctx.config.use_lite_smt_lib {
+                        include_str!("analyser/lib-lite.smt2").to_owned()
+                    } else {
+                        include_str!("analyser/lib.smt2").to_owned()
+                    },
                 }]),
             };
 
@@ -237,7 +245,7 @@ async fn check_rule<'a>(
                     };
                     errors.push(AnalysysResult::Error(AnalysysError::new(
                         format!(
-                            "{}\n\nExample over 1MB input data:\n{}",
+                            "{}\n\nExample of a valid document under this rules:\n{}",
                             message, example_as_json
                         ),
                         rule,

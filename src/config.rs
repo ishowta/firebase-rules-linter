@@ -62,7 +62,7 @@ impl Default for LinterRules {
             no_write_rule: true,
             unexpected_field: true,
             untyped_field: true,
-            insufficient_upper_size_limit: true,
+            insufficient_upper_size_limit: false,
         }
     }
 }
@@ -75,4 +75,7 @@ pub struct Config {
 
     #[serde_inline_default(5)]
     pub analysis_rule_timeout_sec: usize,
+
+    #[serde_inline_default(false)]
+    pub use_lite_smt_lib: bool,
 }
