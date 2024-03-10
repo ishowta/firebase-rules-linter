@@ -419,7 +419,7 @@ pub fn check_function_calling(
                 let (_, obj_inner_bytes, obj_constraint) =
                     destruct_string(&obj_val.value, cur_expr, declarations);
                 let (_, cur_inner_bytes, cur_constraint) =
-                    destruct_string(&cur_value, cur_expr, declarations);
+                    destruct_bytes(&cur_value, cur_expr, declarations);
                 constraints.extend([
                     obj_constraint,
                     cur_constraint,
