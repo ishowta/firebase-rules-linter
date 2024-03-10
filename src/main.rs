@@ -10,7 +10,10 @@ use std::{
 };
 
 use crate::{
-    analyser::{analyze, types::AnalysysGlobalContext},
+    analyser::{
+        analyze,
+        types::{AnalysysGlobalContext, AnalysysResult},
+    },
     binder::bind,
     checker::{check, TypeCheckContext},
     config::{Config, LintError},
@@ -127,7 +130,10 @@ fn main() {
 
         error_count += analyse_result.len();
 
-        for result in analyse_result.iter().map(|x| Report::from((*x).clone())) {
+        for result in analyse_result.iter().map(|x| match x.clone() {
+            AnalysysResult::Error(x) => Report::from(x),
+            AnalysysResult::Warning(x) => Report::from(x),
+        }) {
             println!("{:?}", result.with_source_code(code.clone()));
         }
     }

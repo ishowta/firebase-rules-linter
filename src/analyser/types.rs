@@ -29,6 +29,30 @@ impl AnalysysError {
     }
 }
 
+#[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq, Hash)]
+#[error("{reason}")]
+#[diagnostic(severity(Warning))]
+pub struct AnalysysWarning {
+    pub reason: String,
+    #[label]
+    pub at: SourceSpan,
+}
+
+impl AnalysysWarning {
+    pub fn new(reason: String, node: &dyn Node) -> AnalysysWarning {
+        AnalysysWarning {
+            reason: reason,
+            at: node.get_span().into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum AnalysysResult {
+    Error(AnalysysError),
+    Warning(AnalysysWarning),
+}
+
 #[derive(Clone, Debug)]
 pub struct Res {
     pub value: Symbol,

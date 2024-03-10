@@ -21,19 +21,19 @@ use crate::{
         check_expression::check_expression,
         parser::parse_smt2_result,
         solver::{solve, SolverResult},
-        types::{AnalysysContext, Res},
+        types::{AnalysysContext, AnalysysError, AnalysysWarning, Res},
         z3::{Assert, Ast, Constraint, Declaration, Symbol},
     },
     ast::{Node, Permission, Rule, RuleGroup},
 };
 
-use self::types::{AnalysysError, AnalysysGlobalContext};
+use self::types::{AnalysysGlobalContext, AnalysysResult};
 
 async fn check_rule<'a>(
     global_ctx: &AnalysysGlobalContext<'a>,
     rule: &Rule,
     progress_bar: &ProgressBar,
-) -> Vec<AnalysysError> {
+) -> Vec<AnalysysResult> {
     info!(
         "check rule at {} line",
         rule.get_span().0.start_point.row + 1
@@ -116,12 +116,17 @@ async fn check_rule<'a>(
             SolverResult::Unsat => {
                 info!("Always false");
                 is_always_false_unsat = true;
-                errors.push(AnalysysError::new(format!("Always false"), rule))
+                errors.push(AnalysysResult::Error(AnalysysError::new(
+                    format!("Always false"),
+                    rule,
+                )))
             }
-            SolverResult::Unknown | SolverResult::Timeout => errors.push(AnalysysError::new(
-                format!("Static analysis failed because this conditions are too complex."),
-                rule,
-            )),
+            SolverResult::Unknown | SolverResult::Timeout => {
+                errors.push(AnalysysResult::Warning(AnalysysWarning::new(
+                    format!("Static analysis failed because this conditions are too complex."),
+                    rule,
+                )))
+            }
         }
     }
 
@@ -229,10 +234,10 @@ async fn check_rule<'a>(
                     } else {
                         "unexpected field detected (unexpected-field)"
                     };
-                    errors.push(AnalysysError::new(
+                    errors.push(AnalysysResult::Error(AnalysysError::new(
                         format!("{}\n\n{}", message, example_as_json),
                         rule,
-                    ));
+                    )));
                     info!("detected");
                     info!("example:\n{}\n\n{}", example, example_as_json);
                 }
@@ -241,10 +246,10 @@ async fn check_rule<'a>(
                 }
                 SolverResult::Unknown | SolverResult::Timeout => {
                     info!("timeout, skip");
-                    errors.push(AnalysysError::new(
+                    errors.push(AnalysysResult::Warning(AnalysysWarning::new(
                         format!("Static analysis failed because this conditions are too complex."),
                         rule,
-                    ))
+                    )))
                 }
             }
         }
@@ -260,7 +265,7 @@ async fn check_rule_group<'a>(
     ctx: &AnalysysGlobalContext<'a>,
     rule_group: &RuleGroup,
     progress_bar: &ProgressBar,
-) -> Vec<AnalysysError> {
+) -> Vec<AnalysysResult> {
     let (rule_res, rule_group_res) = join!(
         join_all(
             rule_group
@@ -306,7 +311,7 @@ fn count_rule(ast: &crate::ast::Ast) -> u64 {
 }
 
 #[tokio::main]
-pub async fn analyze(ctx: &AnalysysGlobalContext, ast: &crate::ast::Ast) -> Vec<AnalysysError> {
+pub async fn analyze(ctx: &AnalysysGlobalContext, ast: &crate::ast::Ast) -> Vec<AnalysysResult> {
     let rule_count = count_rule(ast);
     let progress_bar = ProgressBar::new(rule_count);
     join_all(ast.tree.services.iter().map(|service| {
