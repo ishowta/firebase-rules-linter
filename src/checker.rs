@@ -38,7 +38,7 @@ impl Into<LintError> for TypeCheckError {
 }
 
 #[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq, Hash)]
-#[error("field {} already declared (no_dupe_keys)", self.name)]
+#[error("field {} already declared (no-dupe-keys)", self.name)]
 #[diagnostic()]
 pub struct KeysDuplicated {
     pub name: String,

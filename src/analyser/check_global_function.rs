@@ -149,7 +149,7 @@ pub fn check_global_function_calling(
                     &Constraint::new2(
                         "and",
                         &param_is_null_constraint,
-                        &Constraint::new2("=", &Constraint::new2("string", &"null", &4), cur_value),
+                        &Constraint::new2("=", &Constraint::new2("str", &"null", &4), cur_value),
                     ),
                     &Constraint::new2(
                         "and",
@@ -159,8 +159,8 @@ pub fn check_global_function_calling(
                             &Constraint::new3(
                                 "if",
                                 &param_as_bool_val,
-                                &Constraint::new2("string", &"true", &4),
-                                &Constraint::new2("string", &"false", &5),
+                                &Constraint::new2("str", &"true", &4),
+                                &Constraint::new2("str", &"false", &5),
                             ),
                             cur_value,
                         ),

@@ -219,11 +219,11 @@ async fn check_rule<'a>(
                 SolverResult::Sat(example) => {
                     errors.push(AnalysysError::new(
                         (if global_ctx.config.rules.insufficient_upper_size_limit {
-                            "1MB detected"
+                            "1MB detected (insufficient-upper-size-limit)"
                         } else if global_ctx.config.rules.untyped_field {
-                            "untyped field detected"
+                            "untyped field detected (untyped-field)"
                         } else {
-                            "unexpected field detected"
+                            "unexpected field detected (unexpected-field)"
                         })
                         .to_owned(),
                         rule,
