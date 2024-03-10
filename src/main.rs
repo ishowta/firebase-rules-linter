@@ -75,7 +75,7 @@ fn main() {
 
     let ast = parse(&code);
 
-    // println!("{:#?}", ast);
+    println!("{:#?}", ast);
 
     let (flow, globals, request_resource_data_ty_id) = get_globals();
 

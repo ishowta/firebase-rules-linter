@@ -4,11 +4,13 @@ use async_recursion::async_recursion;
 use futures::{future::join_all, join};
 use indicatif::ProgressBar;
 use log::{debug, info};
+use serde_json::to_string_pretty;
 
 mod check_expression;
 mod check_function;
 mod check_global_function;
 mod destruct_sort;
+mod parser;
 mod solver;
 mod z3;
 
@@ -17,6 +19,7 @@ pub mod types;
 use crate::{
     analyser::{
         check_expression::check_expression,
+        parser::parse_smt2_result,
         solver::{solve, SolverResult},
         types::{AnalysysContext, Res},
         z3::{Assert, Ast, Constraint, Declaration, Symbol},
@@ -217,19 +220,21 @@ async fn check_rule<'a>(
             );
             match solve(&source_code).await {
                 SolverResult::Sat(example) => {
+                    let example_as_json =
+                        to_string_pretty(&parse_smt2_result(example.clone())).unwrap();
+                    let message = (if global_ctx.config.rules.insufficient_upper_size_limit {
+                        "1MB detected (insufficient-upper-size-limit)"
+                    } else if global_ctx.config.rules.untyped_field {
+                        "untyped field detected (untyped-field)"
+                    } else {
+                        "unexpected field detected (unexpected-field)"
+                    });
                     errors.push(AnalysysError::new(
-                        (if global_ctx.config.rules.insufficient_upper_size_limit {
-                            "1MB detected (insufficient-upper-size-limit)"
-                        } else if global_ctx.config.rules.untyped_field {
-                            "untyped field detected (untyped-field)"
-                        } else {
-                            "unexpected field detected (unexpected-field)"
-                        })
-                        .to_owned(),
+                        format!("{}\n\n{}", message, example_as_json),
                         rule,
                     ));
                     info!("detected");
-                    info!("example:\n{}", example);
+                    info!("example:\n{}\n\n{}", example, example_as_json);
                 }
                 SolverResult::Unsat => {
                     debug!("unsat");

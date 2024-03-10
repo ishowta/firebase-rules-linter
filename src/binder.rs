@@ -10,7 +10,7 @@ use crate::{
     symbol::{Bindings, FunctionNodeRef, SymbolID, SymbolReferences, VariableNodeRef},
     ty::{FunctionInterface, Ty},
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, env::var};
 
 impl std::fmt::Debug for Bindings<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
