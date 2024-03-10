@@ -222,13 +222,13 @@ async fn check_rule<'a>(
                 SolverResult::Sat(example) => {
                     let example_as_json =
                         to_string_pretty(&parse_smt2_result(example.clone())).unwrap();
-                    let message = (if global_ctx.config.rules.insufficient_upper_size_limit {
+                    let message = if global_ctx.config.rules.insufficient_upper_size_limit {
                         "1MB detected (insufficient-upper-size-limit)"
                     } else if global_ctx.config.rules.untyped_field {
                         "untyped field detected (untyped-field)"
                     } else {
                         "unexpected field detected (unexpected-field)"
-                    });
+                    };
                     errors.push(AnalysysError::new(
                         format!("{}\n\n{}", message, example_as_json),
                         rule,

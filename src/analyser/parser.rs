@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use itertools::Itertools;
 use log::debug;
 use serde_json::{Map, Number, Value};
 use smt2parser::{

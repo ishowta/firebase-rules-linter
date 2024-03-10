@@ -1,5 +1,5 @@
 use nanoid::{alphabet, nanoid};
-use std::{cell::RefCell, collections::HashMap, fmt::Display, hash::Hash, iter::zip};
+use std::{collections::HashMap, fmt::Display, hash::Hash, iter::zip};
 
 use crate::{
     ast::{BinaryLiteral, Node, UnaryLiteral},
@@ -382,8 +382,7 @@ impl TypeKind {
         .or(|| self.is_type_coercion_to(other, flow))
     }
 
-    #[allow(dead_code)]
-    pub fn min(left: &Self, right: &Self, flow: &Flow, polluted: &RefCell<bool>) -> Self {
+    pub fn min(left: &Self, right: &Self, flow: &Flow) -> Self {
         left.can_be(right, flow)
             .and_then(|result| {
                 if result {
@@ -401,7 +400,7 @@ impl TypeKind {
             .unwrap_or(TypeKind::Any)
     }
 
-    pub fn max(left: &Self, right: &Self, flow: &Flow, polluted: &RefCell<bool>) -> Self {
+    pub fn max(left: &Self, right: &Self, flow: &Flow) -> Self {
         left.can_be(right, flow)
             .and_then(|result| {
                 if result {

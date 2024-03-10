@@ -1,4 +1,4 @@
-use std::{borrow::BorrowMut, iter::zip};
+use std::iter::zip;
 
 use crate::{
     analyser::destruct_sort::destruct_string,
