@@ -386,22 +386,26 @@ fn bind_expression<'a, 'b>(
             );
         }
         ExpressionKind::MemberExpression(object_expression, member_expression) => {
-            bind_expression(
-                config,
-                &object_expression,
-                scopes_definitions,
-                bindings,
-                bind_lint_results,
-            );
-
+            let mut is_namespace = false;
             if let ExpressionKind::Variable(name) = &object_expression.kind {
                 if let Some(symbol) =
                     search_namespace_symbol(&name, member_expression, scopes_definitions)
                 {
+                    is_namespace = true;
                     let _ = bindings
                         .function_table
                         .insert(&member_expression.id, symbol);
                 }
+            }
+
+            if !is_namespace {
+                bind_expression(
+                    config,
+                    &object_expression,
+                    scopes_definitions,
+                    bindings,
+                    bind_lint_results,
+                );
             }
 
             if let ExpressionKind::FunctionCallExpression(_, args_expression) =

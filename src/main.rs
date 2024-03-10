@@ -1,5 +1,6 @@
 use clap::{command, Parser, ValueEnum};
 use itertools::Itertools;
+use log::debug;
 use miette::Report;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -75,7 +76,7 @@ fn main() {
 
     let ast = parse(&code);
 
-    println!("{:#?}", ast);
+    debug!("{:#?}", ast);
 
     let (flow, globals, request_resource_data_ty_id) = get_globals();
 
