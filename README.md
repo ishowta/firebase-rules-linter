@@ -6,16 +6,20 @@
 
 for firebase rules
 
+## Requirements
+
+- [Z3 Theorem Prover](https://github.com/Z3Prover/z3)
+
 ## Run
 
 ```sh
-cargo run -- ./firestore.rules
+firebase-rules-linter ./firestore.rules
 ```
 
 ### with config
 
 ```sh
-cargo run -- ./firestore.rules --config ./.ruleslintrc.json
+firebase-rules-linter ./firestore.rules --config ./.ruleslintrc.json
 ```
 
 .ruleslintrc.json
