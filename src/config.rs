@@ -68,14 +68,24 @@ impl Default for LinterRules {
 }
 
 #[serde_inline_default]
-#[derive(Clone, Debug, Deserialize, Default)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub rules: LinterRules,
 
-    #[serde_inline_default(5)]
+    #[serde_inline_default(<Config as Default>::default().analysis_rule_timeout_sec)]
     pub analysis_rule_timeout_sec: usize,
 
-    #[serde_inline_default(false)]
+    #[serde_inline_default(<Config as Default>::default().use_lite_smt_lib)]
     pub use_lite_smt_lib: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            rules: LinterRules::default(),
+            analysis_rule_timeout_sec: 5,
+            use_lite_smt_lib: false,
+        }
+    }
 }
