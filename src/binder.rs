@@ -3,8 +3,8 @@ use thiserror::Error;
 
 use crate::{
     ast::{
-        Argument, Ast, Expression, ExpressionKind, Function, MatchPathLiteral, Node, PathLiteral,
-        Rule, RuleGroup, RulesTree, Service,
+        Argument, Ast, Expression, ExpressionKind, Function, LetBinding, MatchPathLiteral, Node,
+        PathCapture, PathCaptureGroup, PathLiteral, Rule, RuleGroup, RulesTree, Service,
     },
     config::{Config, LintError},
     symbol::{Bindings, FunctionNodeRef, SymbolID, SymbolReferences, VariableNodeRef},
@@ -99,11 +99,129 @@ impl<'a> ScopeDefinitions<'a> {
             .rev()
             .find_map(|def| def.functions.get(name))
     }
-    pub fn push(&mut self, definitions: Definitions<'a>) {
-        self.scope_definitions.push(definitions)
+    pub fn push(
+        &mut self,
+        input_definitions: Definitions<'a>,
+        config: &'a Config,
+    ) -> Vec<LintError> {
+        let mut lint_errors = vec![];
+        self.scope_definitions.push(Definitions {
+            variables: HashMap::new(),
+            functions: HashMap::new(),
+            namespaces: HashMap::new(),
+        });
+        for (name, symbol) in input_definitions.variables {
+            if let Some(lint_error) = self.insert_variable(config, name, symbol) {
+                lint_errors.push(lint_error)
+            }
+        }
+        for (name, symbol) in input_definitions.functions {
+            if let Some(lint_error) = self.insert_function(config, name, symbol) {
+                lint_errors.push(lint_error)
+            }
+        }
+        for (name, symbol) in input_definitions.namespaces {
+            self.insert_namespace(config, name, symbol);
+        }
+        lint_errors
     }
-    pub fn pop(&mut self) {
-        self.scope_definitions.pop();
+    pub fn pop(&mut self, bindings: &Bindings, config: &Config) -> Vec<LintError> {
+        let mut lint_errors = vec![];
+
+        if let Some(dropped_definitions) = self.scope_definitions.pop() {
+            // Check unused
+            for variable in dropped_definitions.variables.values() {
+                let is_unused = bindings
+                    .variable_table
+                    .values()
+                    .find(|variable_ref| variable_ref.0 == variable.0)
+                    .is_none();
+                if is_unused {
+                    match variable.1 {
+                        VariableNodeRef::LetBinding(LetBinding {
+                            id: _,
+                            span,
+                            name,
+                            expression: _,
+                        }) => {
+                            if !name.starts_with("_") && config.rules.no_unused_vars {
+                                lint_errors.push(LintError {
+                                    report: Report::from(UnusedVars {
+                                        name: name.to_owned(),
+                                        at: span.into(),
+                                    }),
+                                    span: span.into(),
+                                });
+                            }
+                        }
+                        VariableNodeRef::FunctionArgument(Argument { id: _, span, name }) => {
+                            if !name.starts_with("_") && config.rules.no_unused_args {
+                                lint_errors.push(LintError {
+                                    report: Report::from(UnusedArgs {
+                                        name: name.to_owned(),
+                                        at: span.into(),
+                                    }),
+                                    span: span.into(),
+                                });
+                            }
+                        }
+                        VariableNodeRef::PathCapture(PathCapture { id: _, span, name })
+                        | VariableNodeRef::PathCaptureGroup(PathCaptureGroup {
+                            id: _,
+                            span,
+                            name,
+                        }) => {
+                            // allow unuse database (`/databases/{database}/documents`)
+                            if !name.starts_with("_")
+                                && name != "database"
+                                && config.rules.no_unused_path_captures
+                            {
+                                lint_errors.push(LintError {
+                                    report: Report::from(UnusedPathCaptures {
+                                        name: name.to_owned(),
+                                        at: span.into(),
+                                    }),
+                                    span: span.into(),
+                                });
+                            }
+                        }
+                        VariableNodeRef::GlobalVariable(_) => {}
+                    }
+                }
+            }
+            for function in dropped_definitions.functions.values() {
+                let is_unused = bindings
+                    .function_table
+                    .values()
+                    .find(|function_ref| function_ref.0 == function.0)
+                    .is_none();
+                if is_unused {
+                    match function.1 {
+                        FunctionNodeRef::Function(Function {
+                            id: _,
+                            span,
+                            name,
+                            arguments: _,
+                            let_bindings: _,
+                            return_expression: _,
+                        }) => {
+                            if !name.starts_with("_") && config.rules.no_unused_functions {
+                                lint_errors.push(LintError {
+                                    report: Report::from(UnusedFunctions {
+                                        name: name.to_owned(),
+                                        at: span.into(),
+                                    }),
+                                    span: span.into(),
+                                });
+                            }
+                        }
+                        FunctionNodeRef::GlobalFunction(_, _, _) => {}
+                    }
+                }
+            }
+        }
+
+        lint_errors
     }
     pub fn insert_variable(
         &mut self,
@@ -163,6 +281,18 @@ impl<'a> ScopeDefinitions<'a> {
         }
         None
     }
+    pub fn insert_namespace(
+        &mut self,
+        config: &'a Config,
+        name: &'a str,
+        symbol: HashMap<&'a str, (SymbolID, FunctionNodeRef<'a>)>,
+    ) -> () {
+        self.scope_definitions
+            .last_mut()
+            .unwrap()
+            .namespaces
+            .insert(name, symbol.clone());
+    }
 }
 
 #[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq, Hash)]
@@ -221,6 +351,25 @@ pub struct FunctionShadowed {
 #[diagnostic()]
 pub struct UnusedVars {
     pub name: String,
+    #[label]
+    pub at: SourceSpan,
+}
+
+#[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq, Hash)]
+#[error("Variable `{}` is not used (no-unused-args)", self.name)]
+#[diagnostic()]
+pub struct UnusedArgs {
+    pub name: String,
+    #[label]
+    pub at: SourceSpan,
+}
+
+#[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq, Hash)]
+#[error("Variable `{}` is not used (no-unused-path-captures)", self.name)]
+#[diagnostic()]
+pub struct UnusedPathCaptures {
+    pub name: String,
+    #[label]
     pub at: SourceSpan,
 }
 
@@ -229,6 +378,7 @@ pub struct UnusedVars {
 #[diagnostic()]
 pub struct UnusedFunctions {
     pub name: String,
+    #[label]
     pub at: SourceSpan,
 }
 
@@ -519,7 +669,7 @@ fn bind_function<'a, 'b>(
         pre_args.push(arg);
     }
 
-    scopes_definitions.push(definitions);
+    bind_lint_results.extend(scopes_definitions.push(definitions, config));
 
     for let_binding in function.let_bindings.iter() {
         bind_expression(
@@ -547,7 +697,7 @@ fn bind_function<'a, 'b>(
         bind_lint_results,
     );
 
-    scopes_definitions.pop();
+    bind_lint_results.extend(scopes_definitions.pop(&bindings, config));
 }
 
 fn bind_rule<'a, 'b>(
@@ -573,29 +723,34 @@ fn bind_rule_group<'a, 'b>(
     bindings: &'b mut Bindings<'a>,
     bind_lint_results: &'b mut Vec<LintError>,
 ) {
-    scopes_definitions.push(Definitions {
-        variables: rule_group
-            .match_path
-            .iter()
-            .map(|match_path| match match_path {
-                MatchPathLiteral::PathIdentifier(_) => None,
-                MatchPathLiteral::PathCapture(path_capture) => Some((
-                    &*path_capture.name,
-                    (SymbolID::new(), VariableNodeRef::PathCapture(&path_capture)),
-                )),
-                MatchPathLiteral::PathCaptureGroup(path_capture_group) => Some((
-                    &*path_capture_group.name,
-                    (
-                        SymbolID::new(),
-                        VariableNodeRef::PathCaptureGroup(&path_capture_group),
-                    ),
-                )),
-            })
-            .flatten()
-            .collect::<HashMap<&str, (SymbolID, VariableNodeRef)>>(),
-        functions: HashMap::new(),
-        namespaces: HashMap::new(),
-    });
+    bind_lint_results.extend(
+        scopes_definitions.push(
+            Definitions {
+                variables: rule_group
+                    .match_path
+                    .iter()
+                    .map(|match_path| match match_path {
+                        MatchPathLiteral::PathIdentifier(_) => None,
+                        MatchPathLiteral::PathCapture(path_capture) => Some((
+                            &*path_capture.name,
+                            (SymbolID::new(), VariableNodeRef::PathCapture(&path_capture)),
+                        )),
+                        MatchPathLiteral::PathCaptureGroup(path_capture_group) => Some((
+                            &*path_capture_group.name,
+                            (
+                                SymbolID::new(),
+                                VariableNodeRef::PathCaptureGroup(&path_capture_group),
+                            ),
+                        )),
+                    })
+                    .flatten()
+                    .collect::<HashMap<&str, (SymbolID, VariableNodeRef)>>(),
+                functions: HashMap::new(),
+                namespaces: HashMap::new(),
+            },
+            config,
+        ),
+    );
 
     for function in rule_group.functions.iter() {
         bind_function(
@@ -627,7 +782,7 @@ fn bind_rule_group<'a, 'b>(
         );
     }
 
-    scopes_definitions.pop();
+    bind_lint_results.extend(scopes_definitions.pop(&bindings, config));
 }
 
 fn bind_service<'a, 'b>(
@@ -637,20 +792,25 @@ fn bind_service<'a, 'b>(
     bindings: &'b mut Bindings<'a>,
     bind_lint_results: &'b mut Vec<LintError>,
 ) {
-    scopes_definitions.push(Definitions {
-        variables: HashMap::new(),
-        functions: service
-            .functions
-            .iter()
-            .map(|function| {
-                (
-                    &*function.name,
-                    (SymbolID::new(), FunctionNodeRef::Function(&function)),
-                )
-            })
-            .collect(),
-        namespaces: HashMap::new(),
-    });
+    bind_lint_results.extend(
+        scopes_definitions.push(
+            Definitions {
+                variables: HashMap::new(),
+                functions: service
+                    .functions
+                    .iter()
+                    .map(|function| {
+                        (
+                            &*function.name,
+                            (SymbolID::new(), FunctionNodeRef::Function(&function)),
+                        )
+                    })
+                    .collect(),
+                namespaces: HashMap::new(),
+            },
+            config,
+        ),
+    );
 
     for function in service.functions.iter() {
         bind_function(
@@ -672,7 +832,7 @@ fn bind_service<'a, 'b>(
         );
     }
 
-    scopes_definitions.pop();
+    bind_lint_results.extend(scopes_definitions.pop(&bindings, config));
 }
 
 fn bind_rules_tree<'a, 'b>(
@@ -714,58 +874,63 @@ pub fn bind<'a>(
 
     let mut scopes_definitions = ScopeDefinitions::new();
 
-    scopes_definitions.push(Definitions {
-        variables: globals
-            .0
-            .iter()
-            .map(|(name, type_kind)| {
-                (
-                    *name,
-                    (SymbolID::new(), VariableNodeRef::GlobalVariable(&type_kind)),
-                )
-            })
-            .collect(),
-        functions: globals
-            .1
-            .iter()
-            .map(|(name, func)| {
-                (
-                    *name,
-                    (
-                        SymbolID::new(),
-                        FunctionNodeRef::GlobalFunction(None, (*name).to_owned(), func),
-                    ),
-                )
-            })
-            .collect(),
-        namespaces: globals
-            .2
-            .iter()
-            .map(|(namespace, functions)| {
-                (
-                    *namespace,
-                    functions
-                        .iter()
-                        .map(|(name, func)| {
-                            (
-                                *name,
-                                (
-                                    SymbolID::new(),
-                                    FunctionNodeRef::GlobalFunction(
-                                        Some((*namespace).to_owned()),
-                                        (*name).to_owned(),
-                                        func,
-                                    ),
-                                ),
-                            )
-                        })
-                        .collect(),
-                )
-            })
-            .collect(),
-    });
-
     let mut bind_lint_results = Vec::<LintError>::new();
+
+    bind_lint_results.extend(
+        scopes_definitions.push(
+            Definitions {
+                variables: globals
+                    .0
+                    .iter()
+                    .map(|(name, type_kind)| {
+                        (
+                            *name,
+                            (SymbolID::new(), VariableNodeRef::GlobalVariable(&type_kind)),
+                        )
+                    })
+                    .collect(),
+                functions: globals
+                    .1
+                    .iter()
+                    .map(|(name, func)| {
+                        (
+                            *name,
+                            (
+                                SymbolID::new(),
+                                FunctionNodeRef::GlobalFunction(None, (*name).to_owned(), func),
+                            ),
+                        )
+                    })
+                    .collect(),
+                namespaces: globals
+                    .2
+                    .iter()
+                    .map(|(namespace, functions)| {
+                        (
+                            *namespace,
+                            functions
+                                .iter()
+                                .map(|(name, func)| {
+                                    (
+                                        *name,
+                                        (
+                                            SymbolID::new(),
+                                            FunctionNodeRef::GlobalFunction(
+                                                Some((*namespace).to_owned()),
+                                                (*name).to_owned(),
+                                                func,
+                                            ),
+                                        ),
+                                    )
+                                })
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+            },
+            config,
+        ),
+    );
 
     bind_rules_tree(
         config,
@@ -774,6 +939,8 @@ pub fn bind<'a>(
         &mut bindings,
         &mut bind_lint_results,
     );
+
+    bind_lint_results.extend(scopes_definitions.pop(&bindings, config));
 
     for var_binding in bindings.variable_table.iter() {
         let _ = symbol_references

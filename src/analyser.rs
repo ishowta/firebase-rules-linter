@@ -25,6 +25,7 @@ use crate::{
         z3::{Assert, Ast, Constraint, Declaration, Symbol},
     },
     ast::{Node, Permission, Rule, RuleGroup},
+    config,
 };
 
 use self::types::{AnalysysGlobalContext, AnalysysResult};
@@ -108,7 +109,7 @@ async fn check_rule<'a>(
             ))
             .as_smtlib2(),
         );
-        match solve(&source_code).await {
+        match solve(&source_code, global_ctx.config).await {
             SolverResult::Sat(example) => {
                 debug!("sat");
                 debug!("truthly example:\n{}", example);
@@ -223,7 +224,7 @@ async fn check_rule<'a>(
                     .as_smtlib2()
                 }
             );
-            match solve(&source_code).await {
+            match solve(&source_code, global_ctx.config).await {
                 SolverResult::Sat(example) => {
                     let example_as_json =
                         to_string_pretty(&parse_smt2_result(example.clone())).unwrap();

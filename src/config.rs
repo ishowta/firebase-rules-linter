@@ -20,6 +20,12 @@ pub struct LinterRules {
     #[serde_inline_default(<LinterRules as Default>::default().no_unused_vars)]
     pub no_unused_vars: bool,
 
+    #[serde_inline_default(<LinterRules as Default>::default().no_unused_args)]
+    pub no_unused_args: bool,
+
+    #[serde_inline_default(<LinterRules as Default>::default().no_unused_path_captures)]
+    pub no_unused_path_captures: bool,
+
     #[serde_inline_default(<LinterRules as Default>::default().no_unused_functions)]
     pub no_unused_functions: bool,
 
@@ -31,9 +37,6 @@ pub struct LinterRules {
 
     #[serde_inline_default(<LinterRules as Default>::default().no_write_rule)]
     pub no_write_rule: bool,
-
-    #[serde_inline_default(<LinterRules as Default>::default().check_path_injection)]
-    pub check_path_injection: bool,
 
     #[serde_inline_default(<LinterRules as Default>::default().unexpected_field)]
     pub unexpected_field: bool,
@@ -51,11 +54,12 @@ impl Default for LinterRules {
             no_unnecessary_condition: true,
             no_dupe_keys: true,
             no_unused_vars: true,
+            no_unused_args: true,
+            no_unused_path_captures: false,
             no_unused_functions: true,
             no_shadow: true,
             no_read_rule: true,
             no_write_rule: true,
-            check_path_injection: true,
             unexpected_field: true,
             untyped_field: true,
             insufficient_upper_size_limit: true,
@@ -63,8 +67,12 @@ impl Default for LinterRules {
     }
 }
 
+#[serde_inline_default]
 #[derive(Clone, Debug, Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
     pub rules: LinterRules,
+
+    #[serde_inline_default(5)]
+    pub analysis_rule_timeout_sec: usize,
 }

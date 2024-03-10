@@ -26,11 +26,12 @@ cargo run -- ./firestore.rules --config ./.ruleslintrc.json
     "no-unnecessary-condition": true,
     "no-dupe-keys": true,
     "no-unused-vars": true,
+    "no-unused-args": true,
+    "no-unused-path-captures": false,
     "no-unused-functions": true,
     "no-shadow": true,
     "no-read-rule": true,
     "no-write-rule": true,
-    "check-path-injection": true,
     "unexpected-field": true,
     "untyped-field": true,
     "insufficient-upper-size-limit": true
@@ -136,32 +137,57 @@ service cloud.firestore {
 }
 ```
 
-### no_unused_vars
+### no_unused_vars, no_unused_args, no_unused_path_captures, no_unused_functions
 
 ❌ Incorrect Example:
 
 ```rules
+rules_version = "2";
 
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function getPlan() { // Error: no-unused-functions
+      return request.auth.token.plan;
+    }
+
+    function canGetImage(plan){ // Error: no-unused-args
+      let can_download = { // Error: no-unused-vars
+        "free": false,
+        "pro": true
+      };
+
+      return request.auth.token.plan == "pro";
+    }
+
+    match /images/{image_id} { // Error: no-unused-path-captures
+      allow get: if canGetImage(request.auth.token.user_plan);
+    }
+  }
+}
 ```
 
 ✅ Correct Example:
 
 ```rules
+rules_version = "2";
 
-```
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function canGetImage(plan){
+      let can_download = {
+        "free": false,
+        "pro": true
+      };
 
-### no_unused_functions
+      return can_download[plan];
+    }
 
-❌ Incorrect Example:
-
-```rules
-
-```
-
-✅ Correct Example:
-
-```rules
-
+    match /images/{_image_id} {
+      allow get: if canGetImage(request.auth.token.plan);
+    }
+  }
+}
 ```
 
 ### no_shadow
@@ -169,55 +195,101 @@ service cloud.firestore {
 ❌ Incorrect Example:
 
 ```rules
+rules_version = "2";
 
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{user_id} {
+
+      function canAccess(){
+        return request.auth.token.plan == "pro";
+      }
+
+      allow get: if canAccess();
+
+      match /pictures/{user_id} { // Error
+
+        function canAccess(){ // Error
+          return request.auth.token.plan == "pro";
+        }
+
+        allow get: if canAccess();
+      }
+    }
+  }
+}
 ```
 
 ✅ Correct Example:
 
 ```rules
+rules_version = "2";
 
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{user_id} {
+
+      function canAccessUser(){
+        return request.auth.token.plan == "pro";
+      }
+
+      allow get: if canAccessUser();
+
+      match /pictures/{picture_id} {
+
+        function canAccessPicture(){
+          return request.auth.token.plan == "pro";
+        }
+
+        allow get: if canAccessPicture();
+      }
+    }
+  }
+}
 ```
 
-### no_read_rule
+### no_read_rule, no_write_rule
 
 ❌ Incorrect Example:
 
 ```rules
+rules_version = "2";
 
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function canCreateTag(data){
+      return data.keys().hasOnly(["name"])
+        && "name" in data && data.name is string && data.name.size() <= 40
+    }
+
+    match /tags/{tag} {
+      allow read: if true; // Error
+      allow write: if canCreateTag(request.resource.data); // Error
+    }
+  }
+}
 ```
 
 ✅ Correct Example:
 
 ```rules
+rules_version = "2";
 
-```
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function canCreateTag(data){
+      return data.keys().hasOnly(["name"])
+        && "name" in data && data.name is string && data.name.size() <= 40
+    }
 
-### no_write_rule
-
-❌ Incorrect Example:
-
-```rules
-
-```
-
-✅ Correct Example:
-
-```rules
-
-```
-
-### check_path_injection
-
-❌ Incorrect Example:
-
-```rules
-
-```
-
-✅ Correct Example:
-
-```rules
-
+    match /tags/{tag} {
+      allow get: if true;
+      allow create: if canCreateTag(request.resource.data);
+    }
+  }
+}
 ```
 
 ### unexpected_field
@@ -225,13 +297,38 @@ service cloud.firestore {
 ❌ Incorrect Example:
 
 ```rules
+rules_version = "2";
 
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function validateUser(data){
+      return "name" in data && data.name is string && data.name.size() <= 100
+    }
+
+    match /users/{user_id} {
+      allow update: if validateUser(request.resource.data); // Error
+    }
+  }
+}
 ```
 
 ✅ Correct Example:
 
 ```rules
+rules_version = "2";
 
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function validateUser(data){
+      return data.keys().hasOnly(["name"])
+        && "name" in data && data.name is string && data.name.size() <= 100
+    }
+
+    match /users/{user_id} {
+      allow update: if validateUser(request.resource.data);
+    }
+  }
+}
 ```
 
 ### untyped_field
@@ -239,13 +336,38 @@ service cloud.firestore {
 ❌ Incorrect Example:
 
 ```rules
+rules_version = "2";
 
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function validateUser(data){
+      return data.keys() == ["name"]
+    }
+
+    match /users/{user_id} {
+      allow update: if validateUser(request.resource.data); // Error
+    }
+  }
+}
 ```
 
 ✅ Correct Example:
 
 ```rules
+rules_version = "2";
 
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function validateUser(data){
+      return data.keys().hasOnly(["name"])
+        && "name" in data && data.name is string && data.name.size() <= 100
+    }
+
+    match /users/{user_id} {
+      allow update: if validateUser(request.resource.data);
+    }
+  }
+}
 ```
 
 ### insufficient_upper_size_limit
@@ -253,13 +375,39 @@ service cloud.firestore {
 ❌ Incorrect Example:
 
 ```rules
+rules_version = "2";
 
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function validateUser(data){
+      return data.keys().hasOnly(["name"])
+        && "name" in data && data.name is string
+    }
+
+    match /users/{user_id} {
+      allow update: if validateUser(request.resource.data); // Error
+    }
+  }
+}
 ```
 
 ✅ Correct Example:
 
 ```rules
+rules_version = "2";
 
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function validateUser(data){
+      return data.keys().hasOnly(["name"])
+        && "name" in data && data.name is string && data.name.size() <= 100
+    }
+
+    match /users/{user_id} {
+      allow update: if validateUser(request.resource.data);
+    }
+  }
+}
 ```
 
 ## Todo

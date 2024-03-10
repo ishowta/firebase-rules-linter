@@ -4,6 +4,8 @@ use tokio::process::Command;
 use log::debug;
 use tempfile::NamedTempFile;
 
+use crate::config::Config;
+
 #[test]
 fn test() {
     let command_result = std::process::Command::new("/bin/bash")
@@ -15,7 +17,7 @@ fn test() {
     println!("{:?}", command_result)
 }
 
-async fn run_z3(source: &String) -> String {
+async fn run_z3(source: &String, config: &Config) -> String {
     debug!("{}", source);
     let mut debug_source = "".to_owned();
     let mut line_count = 0;
@@ -30,7 +32,8 @@ async fn run_z3(source: &String) -> String {
         //.arg("-T:5")
         .arg("-c")
         .arg(format!(
-            "ulimit -t 5 && z3 {}",
+            "ulimit -t {} && z3 {}",
+            config.analysis_rule_timeout_sec,
             source_file.path().to_str().unwrap()
         ))
         .output()
@@ -65,7 +68,7 @@ pub enum SolverResult {
     Timeout,
 }
 
-pub async fn solve(source: &String) -> SolverResult {
+pub async fn solve(source: &String, config: &Config) -> SolverResult {
     let input = format!(
         "
 {}
@@ -77,7 +80,7 @@ pub async fn solve(source: &String) -> SolverResult {
 ",
         source
     );
-    let output = run_z3(&input).await;
+    let output = run_z3(&input, config).await;
     debug!("{}", output);
     match output
         .split("\n")
