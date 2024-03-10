@@ -6,7 +6,8 @@ use crate::{
     checker::TypeCheckError,
     orany::OrAny,
     ty::{
-        FunctionInterface, FunctionKind, Interface, ListLiteral, MapLiteral, MayLiteral::*,
+        FunctionInterface, FunctionKind, Interface, ListLiteral, MapLiteral,
+        MayLiteral::{self, *},
         MemberKind, Ty, TypeKind,
     },
 };
@@ -718,7 +719,18 @@ impl TypeKind {
                         FunctionKind::BinaryOp(BinaryLiteral::In),
                         vec![FunctionInterface(
                             (vec![TypeKind::Any], TypeKind::Boolean(Unknown)),
-                            Box::new(move |_, _, _| (Ty::new(TypeKind::Boolean(Unknown)), vec![])),
+                            Box::new(move |_, params, flow| match (ty, &params[..]) {
+                                (Literal(ListLiteral::Tuple(tuple)), [target]) => {
+                                    if let Some(_) = tuple.iter().find(|item| {
+                                        item.expand(flow).is_equal_on_runtime(target, flow).is_true()
+                                    }) {
+                                        (Ty::new(TypeKind::Boolean(Literal(true))), vec![])
+                                    } else {
+                                        (Ty::new(TypeKind::Boolean(Unknown)), vec![])
+                                    }
+                                }
+                                _ => (Ty::new(TypeKind::Boolean(Unknown)), vec![]),
+                            }),
                         )],
                     ),
                     (

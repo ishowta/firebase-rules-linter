@@ -81,7 +81,7 @@ pub fn get_globals() -> (
                         (
                             "token".to_owned(),
                             Ty::new(TypeKind::Map(Literal(MapLiteral {
-                                default: None,
+                                default: Some(Box::new(Ty::new(TypeKind::Any))),
                                 literals: HashMap::from([
                                     ("email".to_owned(), Ty::new(TypeKind::String(Unknown))),
                                     (

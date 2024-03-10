@@ -20,6 +20,9 @@ pub struct LinterRules {
     #[serde_inline_default(<LinterRules as Default>::default().no_unused_vars)]
     pub no_unused_vars: bool,
 
+    #[serde_inline_default(<LinterRules as Default>::default().no_unused_functions)]
+    pub no_unused_functions: bool,
+
     #[serde_inline_default(<LinterRules as Default>::default().no_shadow)]
     pub no_shadow: bool,
 
@@ -48,6 +51,7 @@ impl Default for LinterRules {
             no_unnecessary_condition: true,
             no_dupe_keys: true,
             no_unused_vars: true,
+            no_unused_functions: true,
             no_shadow: true,
             no_read_rule: true,
             no_write_rule: true,

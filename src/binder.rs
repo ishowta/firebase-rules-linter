@@ -216,6 +216,22 @@ pub struct FunctionShadowed {
     pub at: SourceSpan,
 }
 
+#[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq, Hash)]
+#[error("Variable `{}` is not used (no-unused-vars)", self.name)]
+#[diagnostic()]
+pub struct UnusedVars {
+    pub name: String,
+    pub at: SourceSpan,
+}
+
+#[derive(Clone, Debug, Error, Diagnostic, PartialEq, Eq, Hash)]
+#[error("Function `{}()` is not used (no-unused-functions)", self.name)]
+#[diagnostic()]
+pub struct UnusedFunctions {
+    pub name: String,
+    pub at: SourceSpan,
+}
+
 fn search_variable_symbol<'a, 'b, 'c>(
     name: &'c str,
     scopes: &'b ScopeDefinitions<'a>,

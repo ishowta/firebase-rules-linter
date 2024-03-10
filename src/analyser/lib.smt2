@@ -576,6 +576,7 @@
 )))
 
 (declare-const request_auth_token Refl)
+(declare-const request_auth_token_custom_fields (List (Entry String Refl)))
 (assert (= request_auth_token (map
     (insert (entry "email" request_auth_token_email)
     (insert (entry "email_verified" request_auth_token_email_verified)
@@ -583,8 +584,8 @@
     (insert (entry "name" request_auth_token_name)
     (insert (entry "sub" request_auth_token_sub)
     (insert (entry "firebase" request_auth_token_firebase)
-    (as nil (List (Entry String Refl))
-    )))))))
+    request_auth_token_custom_fields
+    ))))))
 )))
 
 (declare-const request_auth Refl)

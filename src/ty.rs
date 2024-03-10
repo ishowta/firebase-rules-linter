@@ -439,6 +439,56 @@ impl TypeKind {
             TypeKind::Timestamp => TypeKind::Timestamp,
         }
     }
+
+    pub fn is_literal(&self, flow: &Flow) -> bool {
+        match self {
+            TypeKind::Null => true,
+            TypeKind::Boolean(MayLiteral::Literal(_)) => true,
+            TypeKind::Bytes(MayLiteral::Literal(_)) => true,
+            TypeKind::Float(MayLiteral::Literal(_)) => true,
+            TypeKind::Integer(MayLiteral::Literal(_)) => true,
+            TypeKind::List(MayLiteral::Literal(ListLiteral::Tuple(tuple))) => {
+                tuple.iter().all(|item| item.expand(flow).is_literal(flow))
+            }
+            TypeKind::Map(MayLiteral::Literal(MapLiteral {
+                literals,
+                default: None,
+            })) => literals
+                .values()
+                .all(|item| item.expand(flow).is_literal(flow)),
+            TypeKind::MapDiff((
+                MayLiteral::Literal(MapLiteral {
+                    literals: left_literals,
+                    default: None,
+                }),
+                MayLiteral::Literal(MapLiteral {
+                    literals: right_literals,
+                    default: None,
+                }),
+            )) => {
+                left_literals
+                    .values()
+                    .all(|item| item.expand(flow).is_literal(flow))
+                    && right_literals
+                        .values()
+                        .all(|item| item.expand(flow).is_literal(flow))
+            }
+            TypeKind::Path(MayLiteral::Literal(_)) => true,
+            TypeKind::PathTemplateUnBound(MayLiteral::Literal(_)) => true,
+            TypeKind::PathTemplateBound(MayLiteral::Literal(_)) => true,
+            TypeKind::Set(MayLiteral::Literal(ty)) => ty.expand(flow).is_literal(flow),
+            TypeKind::String(MayLiteral::Literal(_)) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_equal_on_runtime(&self, target: &Self, flow: &Flow) -> OrAny {
+        if self.is_literal(flow) && target.is_literal(flow) {
+            self.can_be(target, flow).and(|| target.can_be(&self, flow))
+        } else {
+            OrAny::Any
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
