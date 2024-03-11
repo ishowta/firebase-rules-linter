@@ -51,7 +51,7 @@ firebase-rules-linter ./firestore.rules --config ./.ruleslintrc.json
 
 ❌ Incorrect Example:
 
-```rules
+```js
 rules_version = "2";
 
 service cloud.firestore {
@@ -73,7 +73,7 @@ service cloud.firestore {
 
 ✅ Correct Example:
 
-```rules
+```js
 rules_version = "2";
 
 service cloud.firestore {
@@ -97,7 +97,7 @@ service cloud.firestore {
 
 ❌ Incorrect Example:
 
-```rules
+```js
 rules_version = "2";
 
 service cloud.firestore {
@@ -121,7 +121,7 @@ service cloud.firestore {
 
 ✅ Correct Example:
 
-```rules
+```js
 rules_version = "2";
 
 service cloud.firestore {
@@ -147,7 +147,7 @@ service cloud.firestore {
 
 ❌ Incorrect Example:
 
-```rules
+```js
 rules_version = "2";
 
 service cloud.firestore {
@@ -175,7 +175,7 @@ service cloud.firestore {
 
 ✅ Correct Example:
 
-```rules
+```js
 rules_version = "2";
 
 service cloud.firestore {
@@ -200,7 +200,7 @@ service cloud.firestore {
 
 ❌ Incorrect Example:
 
-```rules
+```js
 rules_version = "2";
 
 service cloud.firestore {
@@ -229,7 +229,7 @@ service cloud.firestore {
 
 ✅ Correct Example:
 
-```rules
+```js
 rules_version = "2";
 
 service cloud.firestore {
@@ -260,7 +260,7 @@ service cloud.firestore {
 
 ❌ Incorrect Example:
 
-```rules
+```js
 rules_version = "2";
 
 service cloud.firestore {
@@ -280,7 +280,7 @@ service cloud.firestore {
 
 ✅ Correct Example:
 
-```rules
+```js
 rules_version = "2";
 
 service cloud.firestore {
@@ -304,7 +304,7 @@ service cloud.firestore {
 
 ❌ Incorrect Example:
 
-```rules
+```js
 rules_version = "2";
 
 service cloud.firestore {
@@ -322,7 +322,7 @@ service cloud.firestore {
 
 ✅ Correct Example:
 
-```rules
+```js
 rules_version = "2";
 
 service cloud.firestore {
@@ -345,7 +345,7 @@ service cloud.firestore {
 
 ❌ Incorrect Example:
 
-```rules
+```js
 rules_version = "2";
 
 service cloud.firestore {
@@ -363,7 +363,7 @@ service cloud.firestore {
 
 ✅ Correct Example:
 
-```rules
+```js
 rules_version = "2";
 
 service cloud.firestore {
@@ -386,7 +386,7 @@ service cloud.firestore {
 
 ❌ Incorrect Example:
 
-```rules
+```js
 rules_version = "2";
 
 service cloud.firestore {
@@ -405,7 +405,7 @@ service cloud.firestore {
 
 ✅ Correct Example:
 
-```rules
+```jslinting
 rules_version = "2";
 
 service cloud.firestore {
